@@ -27,6 +27,7 @@ __proxyenabled__ = ['*']
 
 __outputter__ = {
     'sls': 'highstate',
+    'sls_id': 'highstate',
     'pkg': 'highstate',
     'top': 'highstate',
     'single': 'highstate',
@@ -338,7 +339,7 @@ def highstate(test=None,
     try:
         if salt.utils.is_windows():
             # Make sure cache file isn't read-only
-            __salt__['cmd.run']('attrib -R "{0}"'.format(cache_file))
+            __salt__['cmd.run'](['attrib', '-R', cache_file], python_shell=False)
         with salt.utils.fopen(cache_file, 'w+b') as fp_:
             serial.dump(ret, fp_)
     except (IOError, OSError):
@@ -480,7 +481,7 @@ def sls(mods,
     try:
         if salt.utils.is_windows():
             # Make sure cache file isn't read-only
-            __salt__['cmd.run']('attrib -R "{0}"'.format(cache_file))
+            __salt__['cmd.run'](['attrib', '-R', cache_file], python_shell=False)
         with salt.utils.fopen(cache_file, 'w+b') as fp_:
             serial.dump(ret, fp_)
     except (IOError, OSError):
@@ -617,7 +618,7 @@ def show_lowstate(queue=False, **kwargs):
 def sls_id(
         id_,
         mods,
-        saltenv,
+        saltenv='base',
         test=None,
         queue=False,
         **kwargs):
@@ -643,10 +644,10 @@ def sls_id(
         opts['test'] = __opts__.get('test', None)
     st_ = salt.state.HighState(opts)
     if isinstance(mods, string_types):
-        mods = mods.split(',')
+        split_mods = mods.split(',')
     st_.push_active()
     try:
-        high_, errors = st_.render_highstate({saltenv: mods})
+        high_, errors = st_.render_highstate({saltenv: split_mods})
     finally:
         st_.pop_active()
     errors += st_.state.verify_high(high_)
@@ -654,12 +655,18 @@ def sls_id(
         __context__['retcode'] = 1
         return errors
     chunks = st_.state.compile_high_data(high_)
+    ret = {}
     for chunk in chunks:
         if chunk.get('__id__', '') == id_:
-            ret = st_.state.call_chunk(chunk, {}, chunks)
+            ret.update(st_.state.call_chunk(chunk, {}, chunks))
     # Work around Windows multiprocessing bug, set __opts__['test'] back to
     # value from before this function was run.
     __opts__['test'] = orig_test
+    if not ret:
+        raise SaltInvocationError(
+            'No matches for ID \'{0}\' found in SLS \'{1}\' within saltenv '
+            '\'{2}\''.format(id_, mods, saltenv)
+        )
     return ret
 
 

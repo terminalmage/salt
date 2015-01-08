@@ -43,7 +43,9 @@ LIBCLOUD_FUNCS_NOT_SUPPORTED = (
     'saltify.avail_sizes',
     'saltify.avail_images',
     'saltify.avail_locations',
-    'rackspace.reboot'
+    'rackspace.reboot',
+    'openstack.list_locations',
+    'rackspace.list_locations'
 )
 
 
@@ -557,7 +559,7 @@ class Loader(object):
             if self.opts.get('cython_enable', True) is True:
                 # The module was not found, try to find a cython module
                 try:
-                    import pyximport
+                    import pyximport  # pylint: disable=import-error
                     pyximport.install()
 
                     for mod_dir in self.module_dirs:
@@ -604,7 +606,7 @@ class Loader(object):
         cython_enabled = False
         if self.opts.get('cython_enable', True) is True:
             try:
-                import pyximport
+                import pyximport  # pylint: disable=import-error
                 pyximport.install()
                 cython_enabled = True
             except ImportError:
@@ -700,9 +702,9 @@ class Loader(object):
             mod.__salt__ = functions
         try:
             context = sys.modules[
-                functions[functions.keys()[0]].__module__
+                functions[functions.iterkeys().next()].__module__
             ].__context__
-        except (AttributeError, IndexError):
+        except (AttributeError, StopIteration):
             context = {}
         mod.__context__ = context
         return funcs
@@ -723,8 +725,8 @@ class Loader(object):
                     # This is a proxy minion but this module doesn't support proxy
                     # minions at all
                     continue
-                if not self.opts['proxy']['proxytype'] in mod.__proxyenabled__ or \
-                        '*' in mod.__proxyenabled__:
+                if not (self.opts['proxy']['proxytype'] in mod.__proxyenabled__ or
+                        '*' in mod.__proxyenabled__):
                     # This is a proxy minion, this module supports proxy
                     # minions, but not this particular minion
                     log.debug(mod)
@@ -818,6 +820,7 @@ class Loader(object):
         '''
         Loads all of the modules from module_dirs and returns a list of them
         '''
+
         self.modules = []
 
         log.trace('loading {0} in {1}'.format(self.tag, self.module_dirs))
@@ -827,7 +830,7 @@ class Loader(object):
         cython_enabled = False
         if self.opts.get('cython_enable', True) is True:
             try:
-                import pyximport
+                import pyximport  # pylint: disable=import-error
                 pyximport.install()
                 cython_enabled = True
             except ImportError:
@@ -860,6 +863,13 @@ class Loader(object):
                         )
                     )
                     continue
+
+                if fn_.endswith(('.pyc', '.pyo')):
+                    non_compiled_filename = '{0}.py'.format(os.path.splitext(fn_)[0])
+                    if os.path.exists(os.path.join(mod_dir, non_compiled_filename)):
+                        # Let's just process the non compiled python modules
+                        continue
+
                 if (fn_.endswith(('.py', '.pyc', '.pyo', '.so'))
                         or (cython_enabled and fn_.endswith('.pyx'))
                         or os.path.isdir(os.path.join(mod_dir, fn_))):
@@ -869,6 +879,20 @@ class Loader(object):
                         _name = fn_[:extpos]
                     else:
                         _name = fn_
+
+                    if _name in names:
+                        # Since we load custom modules first, if this logic is true it means
+                        # that an internal module was shadowed by an external custom module
+                        log.trace(
+                            'The {0!r} module from {1!r} was shadowed by '
+                            'the module in {2!r}'.format(
+                                _name,
+                                mod_dir,
+                                names[_name],
+                            )
+                        )
+                        continue
+
                     names[_name] = os.path.join(mod_dir, fn_)
                 else:
                     log.trace(

@@ -184,7 +184,7 @@ class CloudClient(object):
                 self.opts['providers'].update({name: {driver: provider}})
             for name, profile in pillars.pop('profiles', {}).items():
                 provider = profile['provider'].split(':')[0]
-                driver = self.opts['providers'][provider].keys()[0]
+                driver = self.opts['providers'][provider].iterkeys().next()
                 profile['provider'] = '{0}:{1}'.format(provider, driver)
                 profile['profile'] = name
                 self.opts['profiles'].update({name: profile})
@@ -221,7 +221,7 @@ class CloudClient(object):
             # also filter them to speedup methods like
             # __filter_non_working_providers
             providers = [a.get('provider', '').split(':')[0]
-                         for a in opts['profiles'].values()
+                         for a in opts['profiles'].itervalues()
                          if a.get('provider', '')]
             if providers:
                 _providers = opts.get('providers', {})
@@ -277,6 +277,7 @@ class CloudClient(object):
         Query all instance information
         '''
         mapper = salt.cloud.Map(self._opts_defaults())
+        mapper.opts['selected_query_option'] = 'list_nodes_full'
         return mapper.map_providers_parallel(query_type)
 
     def select_query(self, query_type='list_nodes_select'):
@@ -284,6 +285,7 @@ class CloudClient(object):
         Query select instance information
         '''
         mapper = salt.cloud.Map(self._opts_defaults())
+        mapper.opts['selected_query_option'] = 'list_nodes_select'
         return mapper.map_providers_parallel(query_type)
 
     def min_query(self, query_type='list_nodes_min'):
@@ -291,6 +293,7 @@ class CloudClient(object):
         Query select instance information
         '''
         mapper = salt.cloud.Map(self._opts_defaults())
+        mapper.opts['selected_query_option'] = 'list_nodes_min'
         return mapper.map_providers_parallel(query_type)
 
     def profile(self, profile, names, vm_overrides=None, **kwargs):
@@ -374,7 +377,7 @@ class CloudClient(object):
         mapper = salt.cloud.Map(self._opts_defaults())
         providers = mapper.map_providers_parallel()
         if provider in providers:
-            provider += ':{0}'.format(providers[provider].keys()[0])
+            provider += ':{0}'.format(providers[provider].iterkeys().next())
         else:
             return False
         if isinstance(names, str):
@@ -407,7 +410,7 @@ class CloudClient(object):
         mapper = salt.cloud.Map(self._opts_defaults())
         providers = mapper.map_providers_parallel()
         if provider in providers:
-            provider += ':{0}'.format(providers[provider].keys()[0])
+            provider += ':{0}'.format(providers[provider].iterkeys().next())
         else:
             return False
         if isinstance(names, str):
@@ -600,7 +603,7 @@ class Cloud(object):
             for driver, details in drivers.iteritems():
                 # If driver has function list_nodes_min, just replace it
                 # with query param to check existing vms on this driver
-                # for minimum information, Othwise still use query param.
+                # for minimum information, Otherwise still use query param.
                 if 'selected_query_option' not in opts:
                     if '{0}.list_nodes_min'.format(driver) in self.clouds:
                         this_query = 'list_nodes_min'
@@ -1440,7 +1443,7 @@ class Cloud(object):
         Remove any mis-configured cloud providers from the available listing
         '''
         for alias, drivers in self.opts['providers'].copy().iteritems():
-            for driver in drivers.copy().keys():
+            for driver in drivers.copy():
                 fun = '{0}.get_configured_provider'.format(driver)
                 if fun not in self.clouds:
                     # Mis-configured provider that got removed?
@@ -1494,7 +1497,7 @@ class Map(Cloud):
         interpolated_map = {}
 
         for profile, mapped_vms in rendered_map.items():
-            names = set(mapped_vms.keys())
+            names = set(mapped_vms)
             if profile not in self.opts['profiles']:
                 if 'Errors' not in interpolated_map:
                     interpolated_map['Errors'] = {}
@@ -1593,7 +1596,7 @@ class Map(Cloud):
                 )
             )
         try:
-            with open(self.opts['map'], 'rb') as fp_:
+            with salt.utils.fopen(self.opts['map'], 'rb') as fp_:
                 if MAKO_AVAILABLE:
                     log.warn('DEPRECATED: Mako will no longer be the default '
                         'renderer for Salt Cloud maps in the Lithium release')
@@ -1663,7 +1666,7 @@ class Map(Cloud):
 
     def _has_loop(self, dmap, seen=None, val=None):
         if seen is None:
-            for values in dmap['create'].values():
+            for values in dmap['create'].itervalues():
                 seen = []
                 try:
                     machines = values['requires']
@@ -2066,7 +2069,7 @@ class Map(Cloud):
             if self.opts['start_action']:
                 actionlist = []
                 grp = -1
-                for key, val in groupby(dmap['create'].values(),
+                for key, val in groupby(dmap['create'].itervalues(),
                                         lambda x: x['level']):
                     actionlist.append([])
                     grp += 1
@@ -2086,7 +2089,7 @@ class Map(Cloud):
                         timeout=self.opts['timeout'] * 60, expr_form='list'
                     ))
                 for obj in output_multip:
-                    obj.values()[0]['ret'] = out[obj.keys()[0]]
+                    obj.itervalues().next()['ret'] = out[obj.iterkeys().next()]
                     output.update(obj)
             else:
                 for obj in output_multip:
@@ -2207,7 +2210,7 @@ def run_parallel_map_providers_query(data, queue=None):
         return (data['alias'], data['driver'], ())
 
 
-# for pickle and multiprocessing, we cant use directly decorators
+# for pickle and multiprocessing, we can't use directly decorators
 def _run_parallel_map_providers_query(*args, **kw):
     return communicator(run_parallel_map_providers_query)(*args[0], **kw)
 

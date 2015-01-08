@@ -12,6 +12,9 @@ from os import makedirs
 from os.path import dirname, isdir
 from errno import EEXIST
 
+# Import Salt libs
+import salt.utils
+
 # Get logging started
 log = logging.getLogger(__name__)
 
@@ -48,7 +51,7 @@ def _sanitize(kwargs):
         'insecure', 'ssl_compression'
     )
     ret = {}
-    for var in kwargs.keys():
+    for var in kwargs:
         if var in variables:
             ret[var] = kwargs[var]
 
@@ -82,7 +85,7 @@ class SaltSwift(object):
         self.kwargs['tenant_name'] = tenant_name
         self.kwargs['authurl'] = auth_url
         self.kwargs['auth_version'] = auth_version
-        if 'key' not in self.kwargs.keys():
+        if 'key' not in self.kwargs:
             self.kwargs['key'] = password
 
         self.kwargs = _sanitize(self.kwargs)
@@ -173,7 +176,7 @@ class SaltSwift(object):
                 dirpath = dirname(local_file)
                 if dirpath and not isdir(dirpath):
                     mkdirs(dirpath)
-                fp = open(local_file, 'wb')
+                fp = salt.utils.fopen(local_file, 'wb')
 
             read_length = 0
             for chunk in body:
@@ -196,9 +199,8 @@ class SaltSwift(object):
         Upload a file to Swift
         '''
         try:
-            fp = open(local_file, 'rb')
-            self.conn.put_object(cont, obj, fp)
-            fp.close()
+            with salt.utils.fopen(local_file, 'rb') as fp_:
+                self.conn.put_object(cont, obj, fp_)
             return True
         except Exception as exc:
             log.error('There was an error::')

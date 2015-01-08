@@ -355,7 +355,8 @@ def get_containers(all=True,
                    since=None,
                    before=None,
                    limit=-1,
-                   host=False):
+                   host=False,
+                   inspect=False):
     '''
     Get a list of mappings representing all containers
 
@@ -368,27 +369,49 @@ def get_containers(all=True,
     host
         include the Docker host's ipv4 and ipv6 address in return, Default is ``False``
 
+    inspect
+        Get more granular information about each container by running a docker inspect
+
     CLI Example:
 
     .. code-block:: bash
 
         salt '*' docker.get_containers
         salt '*' docker.get_containers host=True
+        salt '*' docker.get_containers host=True inspect=True
     '''
+
     client = _get_client()
     status = base_status.copy()
+
     if host:
         status['host'] = {}
         status['host']['interfaces'] = __salt__['network.interfaces']()
-    ret = client.containers(all=all,
-                            trunc=trunc,
-                            since=since,
-                            before=before,
-                            limit=limit)
+
+    containers = ret = client.containers(all=all,
+                                         trunc=trunc,
+                                         since=since,
+                                         before=before,
+                                         limit=limit)
+
+    # Optionally for each container get more granular information from them
+    # by inspecting the container
+    if inspect:
+        ret = []
+        for container in containers:
+            container_id = container.get('Id')
+            if container_id:
+                inspect = _get_container_infos(container_id)
+                container['detail'] = {}
+                for key, value in inspect.iteritems():
+                    container['detail'][key] = value
+            ret.append(container)
+
     if ret:
         _valid(status, comment='All containers in out', out=ret)
     else:
         _invalid(status)
+
     return status
 
 
@@ -509,20 +532,17 @@ def export(container, path):
     '''
     try:
         ppath = os.path.abspath(path)
-        fic = open(ppath, 'w')
-        status = base_status.copy()
-        client = _get_client()
-        response = client.export(_get_container_infos(container)['Id'])
-        try:
+        with salt.utils.fopen(ppath, 'w') as fic:
+            status = base_status.copy()
+            client = _get_client()
+            response = client.export(_get_container_infos(container)['Id'])
             byte = response.read(4096)
             fic.write(byte)
             while byte != '':
                 # Do stuff with byte.
                 byte = response.read(4096)
                 fic.write(byte)
-        finally:
             fic.flush()
-            fic.close()
         _valid(status,
                id_=container, out=ppath,
                comment='Exported to {0}'.format(ppath))
@@ -1218,7 +1238,7 @@ def import_image(src, repo, tag=None):
     try:
         ret = client.import_image(src, repository=repo, tag=tag)
         if ret:
-            image_logs, _info = _parse_image_multilogs_string(ret, repo)
+            image_logs, _info = _parse_image_multilogs_string(ret)
             _create_image_assemble_error_status(status, ret, image_logs)
             if status['status'] is not False:
                 infos = _get_image_infos(image_logs[0]['status'])
@@ -1471,7 +1491,7 @@ def inspect_image(image):
     return status
 
 
-def _parse_image_multilogs_string(ret, repo):
+def _parse_image_multilogs_string(ret):
     '''
     Parse image log strings into grokable data
     '''
@@ -1570,7 +1590,7 @@ def pull(repo, tag=None):
     try:
         ret = client.pull(repo, tag=tag)
         if ret:
-            image_logs, infos = _parse_image_multilogs_string(ret, repo)
+            image_logs, infos = _parse_image_multilogs_string(ret)
             if infos and infos.get('Id', None):
                 repotag = repo
                 if tag:
@@ -1658,7 +1678,7 @@ def push(repo, tag=None, quiet=False):
     try:
         ret = client.push(repo, tag=tag)
         if ret:
-            image_logs, infos = _parse_image_multilogs_string(ret, repo_name)
+            image_logs, infos = _parse_image_multilogs_string(ret)
             if image_logs:
                 repotag = repo_name
                 if tag:
@@ -1922,11 +1942,9 @@ def get_container_root(container):
     default_rootfs = os.path.join(default_path, 'roofs')
     rootfs_re = re.compile(r'^lxc.rootfs\s*=\s*(.*)\s*$', re.U)
     try:
-        lxcconfig = os.path.join(
-            default_path, 'config.lxc')
-        f = open(lxcconfig)
-        try:
-            lines = f.readlines()
+        lxcconfig = os.path.join(default_path, 'config.lxc')
+        with salt.utils.fopen(lxcconfig) as fhr:
+            lines = fhr.readlines()
             rlines = lines[:]
             rlines.reverse()
             for rl in rlines:
@@ -1934,8 +1952,6 @@ def get_container_root(container):
                 if robj:
                     rootfs = robj.groups()[0]
                     break
-        finally:
-            f.close()
     except Exception:
         rootfs = default_rootfs
     return rootfs

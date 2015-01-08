@@ -13,12 +13,13 @@ import copy
 import logging
 
 # Import Salt libs
-from salt.utils.odict import OrderedDict
 import salt.client
 import salt.output
+import salt.utils
 import salt.utils.virt
 import salt.utils.cloud
 import salt.key
+from salt.utils.odict import OrderedDict as _OrderedDict
 
 
 log = logging.getLogger(__name__)
@@ -197,7 +198,7 @@ def init(names, host=None, saltcloud_mode=False, quiet=False, **kwargs):
     data = __salt__['lxc.list'](host, quiet=True)
     for host, containers in data.items():
         for name in names:
-            if name in sum(containers.values(), []):
+            if name in sum(containers.itervalues(), []):
                 log.info('Container \'{0}\' already exists'
                          ' on host \'{1}\','
                          ' init can be a NO-OP'.format(
@@ -258,12 +259,12 @@ def init(names, host=None, saltcloud_mode=False, quiet=False, **kwargs):
              name,
              client.cmd_iter(host, 'lxc.init', args, kwarg=kw, timeout=600)))
     done = ret.setdefault('done', [])
-    errors = ret.setdefault('errors', OrderedDict())
+    errors = ret.setdefault('errors', _OrderedDict())
 
     for ix, acmd in enumerate(cmds):
         hst, container_name, cmd = acmd
         containers = ret.setdefault(hst, [])
-        herrs = errors.setdefault(hst, OrderedDict())
+        herrs = errors.setdefault(hst, _OrderedDict())
         serrs = herrs.setdefault(container_name, [])
         sub_ret = next(cmd)
         error = None
@@ -302,10 +303,10 @@ def init(names, host=None, saltcloud_mode=False, quiet=False, **kwargs):
         if explicit_auth:
             fcontent = ''
             if os.path.exists(key):
-                with open(key) as fic:
+                with salt.utils.fopen(key) as fic:
                     fcontent = fic.read().strip()
             if pub_key.strip() != fcontent:
-                with open(key, 'w') as fic:
+                with salt.utils.fopen(key, 'w') as fic:
                     fic.write(pub_key)
                     fic.flush()
         mid = j_ret.get('mid', None)
@@ -363,7 +364,7 @@ def _list_iter(host=None):
         if not isinstance(container_info, dict):
             continue
         chunk = {}
-        id_ = container_info.keys()[0]
+        id_ = container_info.iterkeys().next()
         if host and host != id_:
             continue
         if not isinstance(container_info[id_], dict):

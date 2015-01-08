@@ -417,6 +417,9 @@ def _grant_to_tokens(grant):
             except IndexError:
                 break
 
+        elif phrase == 'tables':
+            database += token
+
         elif phrase == 'user':
             if dict_mode:
                 break
@@ -571,7 +574,7 @@ def query(database, query, **connection_args):
     # into Python objects. It leaves them as strings.
     orig_conv = MySQLdb.converters.conversions
     conv_iter = iter(orig_conv)
-    conv = dict(zip(conv_iter, [str] * len(orig_conv.keys())))
+    conv = dict(zip(conv_iter, [str] * len(orig_conv)))
     # some converters are lists, do not break theses
     conv[FIELD_TYPE.BLOB] = [
         (FLAG.BINARY, str),
@@ -1029,7 +1032,6 @@ def user_exists(user,
             and password:
         # Clear the previous error
         __context__['mysql.error'] = None
-        log.info('Retrying with "{0}" as connection password for {1} ...'.format(password, user))
         connection_args['connection_pass'] = password
         dbc = _connect(**connection_args)
     if dbc is None:
@@ -1461,7 +1463,7 @@ def __ssl_option_sanitize(ssl_option):
 
     # Like most other "salt dsl" YAML structures, ssl_option is a list of single-element dicts
     for opt in ssl_option:
-        key = opt.keys()[0]
+        key = opt.iterkeys().next()
         value = opt[key]
 
         normal_key = key.strip().upper()

@@ -15,6 +15,7 @@ import hashlib
 import resource
 import multiprocessing
 import sys
+import tempfile
 
 # Import third party libs
 import zmq
@@ -120,7 +121,7 @@ class Master(SMaster):
         controller for the Salt master. This is where any data that needs to
         be cleanly maintained from the master is maintained.
         '''
-        # TODO: move to a seperate class, with a better name
+        # TODO: move to a separate class, with a better name
         salt.utils.appendproctitle('_clear_old_jobs')
 
         # Set up search object
@@ -143,6 +144,8 @@ class Master(SMaster):
         pillargitfs = salt.daemons.masterapi.init_git_pillar(self.opts)
         # Clean out the fileserver backend cache
         salt.daemons.masterapi.clean_fsbackend(self.opts)
+        # Clean out pub auth
+        salt.daemons.masterapi.clean_pub_auth(self.opts)
 
         old_present = set()
         while True:
@@ -854,7 +857,8 @@ class AESFuncs(object):
             perms,
             clear_load['fun'],
             clear_load['tgt'],
-            clear_load.get('tgt_type', 'glob'))
+            clear_load.get('tgt_type', 'glob'),
+            publish_validate=True)
 
     def __verify_load(self, load, verify_keys):
         '''
@@ -1078,7 +1082,7 @@ class AESFuncs(object):
             return False
         load['grains']['id'] = load['id']
         mods = set()
-        for func in self.mminion.functions.values():
+        for func in self.mminion.functions.itervalues():
             mods.add(func.__module__)
         for mod in mods:
             sys.modules[mod].__grains__ = load['grains']
@@ -1097,12 +1101,15 @@ class AESFuncs(object):
             if not os.path.isdir(cdir):
                 os.makedirs(cdir)
             datap = os.path.join(cdir, 'data.p')
-            with salt.utils.fopen(datap, 'w+b') as fp_:
+            tmpfh, tmpfname = tempfile.mkstemp(dir=cdir)
+            os.close(tmpfh)
+            with salt.utils.fopen(tmpfname, 'w+b') as fp_:
                 fp_.write(
                     self.serial.dumps(
                         {'grains': load['grains'],
                          'pillar': data})
                     )
+            os.rename(tmpfname, datap)
         for mod in mods:
             sys.modules[mod].__grains__ = self.opts['grains']
         return data
@@ -1477,7 +1484,8 @@ class ClearFuncs(object):
             pass
         elif os.path.isfile(pubfn_rejected):
             # The key has been rejected, don't place it in pending
-            log.info('Public key rejected for {id}'.format(**load))
+            log.info('Public key rejected for {0}. Key is present in '
+                     'rejection key dir.'.format(load['id']))
             eload = {'result': False,
                      'id': load['id'],
                      'pub': load['pub']}
@@ -1638,11 +1646,20 @@ class ClearFuncs(object):
 
         log.info('Authentication accepted from {id}'.format(**load))
         # only write to disk if you are adding the file, and in open mode,
-        # which implies we accept any key from a minion (key needs to be
-        # written every time because what's on disk is used for encrypting)
-        if not os.path.isfile(pubfn) or self.opts['open_mode']:
+        # which implies we accept any key from a minion.
+        if not os.path.isfile(pubfn) and not self.opts['open_mode']:
             with salt.utils.fopen(pubfn, 'w+') as fp_:
                 fp_.write(load['pub'])
+        elif self.opts['open_mode']:
+            disk_key = ''
+            if os.path.isfile(pubfn):
+                with salt.utils.fopen(pubfn, 'r') as fp_:
+                    disk_key = fp_.read()
+            if load['pub'] and load['pub'] != disk_key:
+                log.debug('Host key change detected in open mode.')
+                with salt.utils.fopen(pubfn, 'w+') as fp_:
+                    fp_.write(load['pub'])
+
         pub = None
 
         # The key payload may sometimes be corrupt when using auto-accept
@@ -2101,11 +2118,17 @@ class ClearFuncs(object):
                 # If a group_auth_match is set it means only that we have a user which matches at least one or more
                 # of the groups defined in the configuration file.
 
+                external_auth_in_db = False
+                for d in self.opts['external_auth'][extra['eauth']]:
+                    if d.startswith('^'):
+                        external_auth_in_db = True
+
                 # If neither a catchall, a named membership or a group membership is found, there is no need
                 # to continue. Simply deny the user access.
                 if not ((name in self.opts['external_auth'][extra['eauth']]) |
                         ('*' in self.opts['external_auth'][extra['eauth']]) |
-                        group_auth_match):
+                        group_auth_match | external_auth_in_db):
+
                         # A group def is defined and the user is a member
                         #[group for groups in ['external_auth'][extra['eauth']]]):
                     # Auth successful, but no matching user found in config

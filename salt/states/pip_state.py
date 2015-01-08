@@ -558,16 +558,16 @@ def installed(name,
         if requirements or editable:
             comments = []
             if requirements:
-                for eachline in pip_install_call.get('stdout', '').split('\n'):
-                    if not eachline.startswith('Requirement already satisfied') and eachline != 'Cleaning up...':
+                for line in pip_install_call.get('stdout', '').split('\n'):
+                    if not line.startswith('Requirement already satisfied') \
+                            and line != 'Cleaning up...':
                         ret['changes']['requirements'] = True
                 if ret['changes'].get('requirements'):
                     comments.append('Successfully processed requirements file '
                                     '{0}.'.format(requirements))
                 else:
-                    comments.append('Requirements was successfully installed')
-                comments.append('Successfully processed requirements file '
-                                '{0}.'.format(requirements))
+                    comments.append('Requirements were already installed.')
+
             if editable:
                 comments.append('Package successfully installed from VCS '
                                 'checkout {0}.'.format(editable))
@@ -589,7 +589,7 @@ def installed(name,
                 ret['changes']['{0}==???'.format(name)] = 'Installed'
                 return ret
 
-            version = list(pkg_list.values())[0]
+            version = pkg_list.itervalues().next()
             pkg_name = next(iter(pkg_list))
             ret['changes']['{0}=={1}'.format(pkg_name, version)] = 'Installed'
             ret['comment'] = 'Package was successfully installed'

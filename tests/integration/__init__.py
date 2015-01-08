@@ -13,6 +13,7 @@ import copy
 import json
 import time
 import errno
+import signal
 import shutil
 import pprint
 import logging
@@ -395,13 +396,15 @@ class TestDaemon(object):
         if keygen_ed25519_err:
             print('ssh-keygen had errors: {0}'.format(keygen_ed25519_err))
 
-        with open(os.path.join(TMP_CONF_DIR, 'sshd_config'), 'a') as ssh_config:
+        with salt.utils.fopen(os.path.join(TMP_CONF_DIR, 'sshd_config'), 'a') as ssh_config:
             ssh_config.write('AuthorizedKeysFile {0}\n'.format(auth_key_file))
             ssh_config.write('HostKey {0}\n'.format(server_dsa_priv_key_file))
             ssh_config.write('HostKey {0}\n'.format(server_ecdsa_priv_key_file))
             ssh_config.write('HostKey {0}\n'.format(server_ed25519_priv_key_file))
+
+        self.sshd_pidfile = os.path.join(TMP_CONF_DIR, 'sshd.pid')
         self.sshd_process = subprocess.Popen(
-            [sshd, '-f', 'sshd_config'],
+            [sshd, '-f', 'sshd_config', '-oPidFile={0}'.format(self.sshd_pidfile)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             close_fds=True,
@@ -412,7 +415,8 @@ class TestDaemon(object):
             print('sshd had errors on startup: {0}'.format(sshd_err))
         roster_path = os.path.join(FILES, 'conf/_ssh/roster')
         shutil.copy(roster_path, TMP_CONF_DIR)
-        with open(os.path.join(TMP_CONF_DIR, 'roster'), 'a') as roster:
+        with salt.utils.fopen(os.path.join(TMP_CONF_DIR, 'roster'), 'a') as roster:
+            roster.write('  user: {0}\n'.format(pwd.getpwuid(os.getuid()).pw_name))
             roster.write('  priv: {0}/{1}'.format(TMP_CONF_DIR, 'key_test'))
 
     @property
@@ -440,6 +444,10 @@ class TestDaemon(object):
         running_tests_user = pwd.getpwuid(os.getuid()).pw_name
         master_opts = salt.config._read_conf_file(os.path.join(CONF_DIR, 'master'))
         master_opts['user'] = running_tests_user
+        tests_know_hosts_file = os.path.join(TMP_CONF_DIR, 'salt_ssh_known_hosts')
+        with salt.utils.fopen(tests_know_hosts_file, 'w') as known_hosts:
+            known_hosts.write('')
+        master_opts['known_hosts_file'] = tests_know_hosts_file
 
         minion_config_path = os.path.join(CONF_DIR, 'minion')
         minion_opts = salt.config._read_conf_file(minion_config_path)
@@ -532,7 +540,7 @@ class TestDaemon(object):
 
         for entry in ('master', 'minion', 'sub_minion', 'syndic_master'):
             computed_config = copy.deepcopy(locals()['{0}_opts'.format(entry)])
-            open(os.path.join(TMP_CONF_DIR, entry), 'w').write(
+            salt.utils.fopen(os.path.join(TMP_CONF_DIR, entry), 'w').write(
                 yaml.dump(computed_config, default_flow_style=False)
             )
         # <---- Transcribe Configuration -----------------------------------------------------------------------------
@@ -715,8 +723,15 @@ class TestDaemon(object):
         if hasattr(self, 'sshd_process'):
             try:
                 self.sshd_process.kill()
-            except OSError:
-                pass
+            except OSError as exc:
+                if exc.errno != 3:
+                    raise
+            with salt.utils.fopen(self.sshd_pidfile) as fhr:
+                try:
+                    os.kill(int(fhr.read()), signal.SIGKILL)
+                except OSError as exc:
+                    if exc.errno != 3:
+                        raise
 
     def _exit_mockbin(self):
         path = os.environ.get('PATH', '')
@@ -870,7 +885,7 @@ class TestDaemon(object):
         jid_info = self.client.run_job(
             list(targets), 'saltutil.sync_{0}'.format(modules_kind),
             expr_form='list',
-            timeout=9999999999999999,
+            timeout=999999999999999,
         )
 
         if self.wait_for_jid(targets, jid_info['jid'], timeout) is False:
@@ -1139,7 +1154,7 @@ class ShellCase(AdaptedConfigurationTestCaseMixIn, ShellTestCase):
         '''
         Execute salt-ssh
         '''
-        arg_str = '-c {0} -i --priv {1} --roster-file {2} localhost {3} --out=json'.format(self.get_config_dir(), os.path.join(TMP_CONF_DIR, 'key_test'), os.path.join(TMP_CONF_DIR, 'roster'), arg_str)
+        arg_str = '-c {0} -i --priv {1} --roster-file {2} --out=json localhost {3}'.format(self.get_config_dir(), os.path.join(TMP_CONF_DIR, 'key_test'), os.path.join(TMP_CONF_DIR, 'roster'), arg_str)
         return self.run_script('salt-ssh', arg_str, with_retcode=with_retcode, catch_stderr=catch_stderr, raw=True)
 
     def run_run(self, arg_str, with_retcode=False, catch_stderr=False):

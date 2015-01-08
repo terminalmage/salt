@@ -74,7 +74,7 @@ A custom name can be set for the signing key-pair by setting
 
 .. code-block:: yaml
 
-    master_key_sign_name: <name_without_suffix>
+    master_sign_key_name: <name_without_suffix>
 
 The master will then generate that key-pair upon restart and use it for
 creating the public keys signature attached to the auth-reply.
@@ -369,7 +369,7 @@ another key-pair has to be added to the setup. Its default name is:
 The combination of the master.* and master_sign.* key-pairs give the
 possibility of generating signatures. The signature of a given message
 is unique and can be verified, if the public-key of the signing-key-pair
-is available to the recepient (the minion).
+is available to the recipient (the minion).
 
 The signature of the masters public-key in master.pub is computed with
 

@@ -27,13 +27,13 @@ import shutil
 import socket
 import stat
 import string
-import subprocess
 import sys
 import tempfile
 import time
 import types
 import warnings
 import yaml
+import locale
 from calendar import month_abbr as months
 from string import maketrans
 
@@ -98,6 +98,7 @@ except ImportError:
 
 # Import salt libs
 import salt._compat
+import salt.exitcodes
 import salt.log
 import salt.payload
 import salt.version
@@ -274,7 +275,7 @@ def daemonize(redirect_out=True):
         pid = os.fork()
         if pid > 0:
             # exit first parent
-            sys.exit(os.EX_OK)
+            sys.exit(salt.exitcodes.EX_OK)
     except OSError as exc:
         log.error(
             'fork #1 failed: {0} ({1})'.format(exc.errno, exc.strerror)
@@ -291,7 +292,7 @@ def daemonize(redirect_out=True):
     try:
         pid = os.fork()
         if pid > 0:
-            sys.exit(os.EX_OK)
+            sys.exit(salt.exitcodes.EX_OK)
     except OSError as exc:
         log.error(
             'fork #2 failed: {0} ({1})'.format(
@@ -305,10 +306,10 @@ def daemonize(redirect_out=True):
     # not cleanly redirected and the parent process dies when the
     # multiprocessing process attempts to access stdout or err.
     if redirect_out:
-        dev_null = open('/dev/null', 'r+')
-        os.dup2(dev_null.fileno(), sys.stdin.fileno())
-        os.dup2(dev_null.fileno(), sys.stdout.fileno())
-        os.dup2(dev_null.fileno(), sys.stderr.fileno())
+        with fopen('/dev/null', 'r+') as dev_null:
+            os.dup2(dev_null.fileno(), sys.stdin.fileno())
+            os.dup2(dev_null.fileno(), sys.stdout.fileno())
+            os.dup2(dev_null.fileno(), sys.stderr.fileno())
 
 
 def daemonize_if(opts):
@@ -525,15 +526,13 @@ def dns_check(addr, safe=False, ipv6=False):
             if not addr:
                 error = True
     except TypeError:
-        err = ('Attempt to resolve address failed. Invalid or unresolveable address')
+        err = ('Attempt to resolve address \'{0}\' failed. Invalid or unresolveable address').format(addr)
         raise SaltSystemExit(code=42, msg=err)
     except socket.error:
         error = True
 
     if error:
-        err = ('This master address: \'{0}\' was previously resolvable '
-               'but now fails to resolve! The previously resolved ip addr '
-               'will continue to be used').format(addr)
+        err = ('DNS lookup of \'{0}\' failed.').format(addr)
         if safe:
             if salt.log.is_console_configured():
                 # If logging is not configured it also means that either
@@ -674,74 +673,32 @@ def check_or_die(command):
         raise CommandNotFoundError(command)
 
 
-def copyfile(source, dest, backup_mode='', cachedir=''):
-    '''
-    Copy files from a source to a destination in an atomic way, and if
-    specified cache the file.
-    '''
-    if not os.path.isfile(source):
-        raise IOError(
-            '[Errno 2] No such file or directory: {0}'.format(source)
-        )
-    if not os.path.isdir(os.path.dirname(dest)):
-        raise IOError(
-            '[Errno 2] No such file or directory: {0}'.format(dest)
-        )
-    bname = os.path.basename(dest)
-    dname = os.path.dirname(os.path.abspath(dest))
-    tgt = mkstemp(prefix=bname, dir=dname)
-    shutil.copyfile(source, tgt)
-    bkroot = ''
-    if cachedir:
-        bkroot = os.path.join(cachedir, 'file_backup')
-    if backup_mode == 'minion' or backup_mode == 'both' and bkroot:
-        if os.path.exists(dest):
-            backup_minion(dest, bkroot)
-    if backup_mode == 'master' or backup_mode == 'both' and bkroot:
-        # TODO, backup to master
-        pass
-    # Get current file stats to they can be replicated after the new file is
-    # moved to the destination path.
-    fstat = None
-    if not salt.utils.is_windows():
-        try:
-            fstat = os.stat(dest)
-        except OSError:
-            pass
-    shutil.move(tgt, dest)
-    if fstat is not None:
-        os.chown(dest, fstat.st_uid, fstat.st_gid)
-        os.chmod(dest, fstat.st_mode)
-    # If SELINUX is available run a restorecon on the file
-    rcon = which('restorecon')
-    if rcon:
-        with fopen(os.devnull, 'w') as dev_null:
-            cmd = [rcon, dest]
-            subprocess.call(cmd, stdout=dev_null, stderr=dev_null)
-    if os.path.isfile(tgt):
-        # The temp file failed to move
-        try:
-            os.remove(tgt)
-        except Exception:
-            pass
-
-
 def backup_minion(path, bkroot):
     '''
     Backup a file on the minion
     '''
     dname, bname = os.path.split(path)
-    fstat = os.stat(path)
+    if salt.utils.is_windows():
+        src_dir = dname.replace(':', '_')
+    else:
+        src_dir = dname[1:]
+    if not salt.utils.is_windows():
+        fstat = os.stat(path)
     msecs = str(int(time.time() * 1000000))[-6:]
-    stamp = time.strftime('%a_%b_%d_%H:%M:%S_%Y')
+    if salt.utils.is_windows():
+        # ':' is an illegal filesystem path character on Windows
+        stamp = time.strftime('%a_%b_%d_%H-%M-%S_%Y')
+    else:
+        stamp = time.strftime('%a_%b_%d_%H:%M:%S_%Y')
     stamp = '{0}{1}_{2}'.format(stamp[:-4], msecs, stamp[-4:])
     bkpath = os.path.join(bkroot,
-                          dname[1:],
+                          src_dir,
                           '{0}_{1}'.format(bname, stamp))
     if not os.path.isdir(os.path.dirname(bkpath)):
         os.makedirs(os.path.dirname(bkpath))
     shutil.copyfile(path, bkpath)
-    os.chown(bkpath, fstat.st_uid, fstat.st_gid)
+    if not salt.utils.is_windows():
+        os.chown(bkpath, fstat.st_uid, fstat.st_gid)
 
 
 def path_join(*parts):
@@ -873,14 +830,14 @@ def format_call(fun,
 
     aspec = get_function_argspec(fun)
 
-    args, kwargs = arg_lookup(fun).values()
+    args, kwargs = arg_lookup(fun).itervalues()
 
     # Since we WILL be changing the data dictionary, let's change a copy of it
     data = data.copy()
 
     missing_args = []
 
-    for key in kwargs.keys():
+    for key in kwargs:
         try:
             kwargs[key] = data.pop(key)
         except KeyError:
@@ -1134,7 +1091,7 @@ def flopen(*args, **kwargs):
                 fcntl.flock(fp_.fileno(), fcntl.LOCK_UN)
 
 
-def expr_match(expr, line):
+def expr_match(line, expr):
     '''
     Evaluate a line of text against an expression. First try a full-string
     match, next try globbing, and then try to match assuming expr is a regular
@@ -1197,7 +1154,7 @@ def check_whitelist_blacklist(value, whitelist=None, blacklist=None):
     return ret
 
 
-def subdict_match(data, expr, delim=':', regex_match=False):
+def subdict_match(data, expr, delim=':', regex_match=False, exact_match=False):
     '''
     Check for a match in a dictionary using a delimiter character to denote
     levels of subdicts, and also allowing the delimiter character to be
@@ -1205,13 +1162,15 @@ def subdict_match(data, expr, delim=':', regex_match=False):
     data['foo']['bar'] == 'baz'. The former would take priority over the
     latter.
     '''
-    def _match(target, pattern, regex_match=False):
+    def _match(target, pattern, regex_match=False, exact_match=False):
         if regex_match:
             try:
                 return re.match(pattern.lower(), str(target).lower())
             except Exception:
                 log.error('Invalid regex {0!r} in match'.format(pattern))
                 return False
+        elif exact_match:
+            return str(target).lower() == pattern.lower()
         else:
             return fnmatch.fnmatch(str(target).lower(), pattern.lower())
 
@@ -1235,12 +1194,21 @@ def subdict_match(data, expr, delim=':', regex_match=False):
                 if isinstance(member, dict):
                     if matchstr.startswith('*:'):
                         matchstr = matchstr[2:]
-                    if subdict_match(member, matchstr, regex_match=regex_match):
+                    if subdict_match(member,
+                                     matchstr,
+                                     regex_match=regex_match,
+                                     exact_match=exact_match):
                         return True
-                if _match(member, matchstr, regex_match=regex_match):
+                if _match(member,
+                          matchstr,
+                          regex_match=regex_match,
+                          exact_match=exact_match):
                     return True
             continue
-        if _match(match, matchstr, regex_match=regex_match):
+        if _match(match,
+                  matchstr,
+                  regex_match=regex_match,
+                  exact_match=exact_match):
             return True
     return False
 
@@ -1390,6 +1358,14 @@ def is_sunos():
     Simple function to return if host is SunOS or not
     '''
     return sys.platform.startswith('sunos')
+
+
+@real_memoize
+def is_freebsd():
+    '''
+    Simple function to return if host is FreeBSD or not
+    '''
+    return sys.platform.startswith('freebsd')
 
 
 def is_fcntl_available(check_sunos=False):
@@ -1901,11 +1877,26 @@ def warn_until(version,
         )
 
     if _dont_call_warnings is False:
+        def _formatwarning(message,
+                           category,
+                           filename,
+                           lineno,
+                           line=None):  # pylint: disable=W0613
+            '''
+            Replacement for warnings.formatwarning that disables the echoing of
+            the 'line' parameter.
+            '''
+            return '{0}:{1}: {2}: {3}'.format(
+                filename, lineno, category.__name__, message
+            )
+        saved = warnings.formatwarning
+        warnings.formatwarning = _formatwarning
         warnings.warn(
             message.format(version=version.formatted_version),
             category,
             stacklevel=stacklevel
         )
+        warnings.formatwarning = saved
 
 
 def kwargs_warn_until(kwargs,
@@ -2008,7 +1999,7 @@ def compare_versions(ver1='', oper='==', ver2='', cmp_func=None):
     '''
     cmp_map = {'<': (-1,), '<=': (-1, 0), '==': (0,),
                '>=': (0, 1), '>': (1,)}
-    if oper not in ['!='] + cmp_map.keys():
+    if oper not in ['!='] and oper not in cmp_map:
         log.error('Invalid operator "{0}" for version '
                   'comparison'.format(oper))
         return False
@@ -2032,7 +2023,7 @@ def compare_dicts(old=None, new=None):
     dict describing the changes that were made.
     '''
     ret = {}
-    for key in set((new or {}).keys()).union((old or {}).keys()):
+    for key in set((new or {})).union((old or {})):
         if key not in old:
             # New key
             ret[key] = {'old': '',
@@ -2143,7 +2134,7 @@ def is_bin_file(path):
     if not os.path.isfile(path):
         return None
     try:
-        with open(path, 'r') as fp_:
+        with fopen(path, 'r') as fp_:
             return is_bin_str(fp_.read(2048))
     except os.error:
         return None
@@ -2377,7 +2368,7 @@ def import_json():
     for fast_json in ('ujson', 'yajl', 'json'):
         try:
             mod = __import__(fast_json)
-            log.info('loaded {0} json lib'.format(fast_json))
+            log.trace('loaded {0} json lib'.format(fast_json))
             return mod
         except ImportError:
             continue
@@ -2411,8 +2402,8 @@ def chugid(runas):
     # this does not appear to be strictly true.
     group_list = get_group_dict(runas, include_default=True)
     if sys.platform == 'darwin':
-        group_list = [a for a in group_list
-                      if not a.startswith('_')]
+        group_list = dict((k, v) for k, v in group_list.iteritems()
+                          if not k.startswith('_'))
     for group_name in group_list:
         gid = group_list[group_name]
         if (gid not in supgroups_seen
@@ -2465,3 +2456,37 @@ def chugid_and_umask(runas, umask):
 def rand_string(size=32):
     key = os.urandom(size)
     return key.encode('base64').replace('\n', '')
+
+
+@real_memoize
+def get_encodings():
+    '''
+    return a list of string encodings to try
+    '''
+    encodings = []
+    loc = locale.getdefaultlocale()[-1]
+    if loc:
+        encodings.append(loc)
+    encodings.append(sys.getdefaultencoding())
+    encodings.extend(['utf-8', 'latin-1'])
+    return encodings
+
+
+def sdecode(string):
+    '''
+    Since we don't know where a string is coming from and that string will
+    need to be safely decoded, this function will attempt to decode the string
+    until if has a working string that does not stack trace
+    '''
+    if not isinstance(string, str):
+        return string
+    encodings = get_encodings()
+    for encoding in encodings:
+        try:
+            decoded = string.decode(encoding)
+            # Make sure unicode string ops work
+            u' ' + decoded  # pylint: disable=W0104
+            return decoded
+        except UnicodeDecodeError:
+            continue
+    return string

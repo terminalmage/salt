@@ -20,7 +20,7 @@ the targeting state.  The following example demonstrates a direct requisite:
 .. code-block:: yaml
 
     vim:
-      pkg.installed
+      pkg.installed: []
 
     /etc/vimrc:
       file.managed:
@@ -202,18 +202,18 @@ a state that has not yet been executed. The state containing the ``prereq``
 requisite is defined as the pre-requiring state. The state specified in the
 ``prereq`` statement is defined as the pre-required state.
 
-When ``prereq`` is called, the pre-required state reports if it expects to
-have any changes. It does this by running the pre-required single state as a
-test-run by enabling ``test=True``. This test-run will return a dictionary
-containing a key named "changes". (See the ``watch`` section above for
-examples of "changes" dictionaries.)
+When a ``prereq`` requisite is evaluated, the pre-required state reports if it
+expects to have any changes. It does this by running the pre-required single
+state as a test-run by enabling ``test=True``. This test-run will return a
+dictionary containing a key named "changes". (See the ``watch`` section above
+for examples of "changes" dictionaries.)
 
 If the "changes" key contains a populated dictionary, it means that the
 pre-required state expects changes to occur when the state is actually
-executed, as opposed to the test-run. The pre-required state will now
-actually run. If the pre-required state executes successfully, the
-pre-requiring state will then execute. If the pre-required state fails, the
-pre-requiring state will not execute.
+executed, as opposed to the test-run. The pre-requiring state will now
+actually run. If the pre-requiring state executes successfully, the
+pre-required state will then execute. If the pre-requiring state fails, the
+pre-required state will not execute.
 
 If the "changes" key contains an empty dictionary, this means that changes are
 not expected by the pre-required state. Neither the pre-required state nor the
@@ -258,15 +258,13 @@ The ``onfail`` requisite is applied in the same way as ``require`` as ``watch``:
 .. code-block:: yaml
 
     primary_mount:
-      mount:
-        - mounted
+      mount.mounted:
         - name: /mnt/share
         - device: 10.0.0.45:/share
         - fstype: nfs
 
     backup_mount:
-      mount:
-        - mounted
+      mount.mounted:
         - name: /mnt/share
         - device: 192.168.40.34:/share
         - fstype: nfs
@@ -338,10 +336,8 @@ Using ``require``
 .. code-block:: yaml
 
     httpd:
-      pkg:
-        - installed
-      service:
-        - running
+      pkg.installed: []
+      service.running:
         - require:
           - pkg: httpd
 
@@ -350,12 +346,10 @@ Using ``require_in``
 .. code-block:: yaml
 
     httpd:
-      pkg:
-        - installed
+      pkg.installed:
         - require_in:
           - service: httpd
-      service:
-        - running
+      service.running: []
 
 The ``require_in`` statement is particularly useful when assigning a require
 in a separate sls file. For instance it may be common for httpd to require
@@ -367,10 +361,8 @@ http.sls
 .. code-block:: yaml
 
     httpd:
-      pkg:
-        - installed
-      service:
-        - running
+      pkg.installed: []
+      service.running:
         - require:
           - pkg: httpd
 
@@ -382,8 +374,7 @@ php.sls
       - http
 
     php:
-      pkg:
-        - installed
+      pkg.installed:
         - require_in:
           - service: httpd
 
@@ -395,8 +386,7 @@ mod_python.sls
       - http
 
     mod_python:
-      pkg:
-        - installed
+      pkg.installed:
         - require_in:
           - service: httpd
 

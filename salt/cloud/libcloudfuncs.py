@@ -117,8 +117,8 @@ def ssh_pub(vm_):
     ssh = os.path.expanduser(ssh)
     if os.path.isfile(ssh):
         return None
-
-    return SSHKeyDeployment(open(ssh).read())
+    with salt.utils.fopen(ssh) as fhr:
+        return SSHKeyDeployment(fhr.read())
 
 
 def avail_locations(conn=None, call=None):
@@ -456,7 +456,7 @@ def list_nodes_full(conn=None, call=None):
     ret = {}
     for node in nodes:
         pairs = {}
-        for key, value in zip(node.__dict__.keys(), node.__dict__.values()):
+        for key, value in zip(node.__dict__, node.__dict__.itervalues()):
             pairs[key] = value
         ret[node.name] = pairs
         del ret[node.name]['driver']

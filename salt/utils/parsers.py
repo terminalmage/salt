@@ -136,7 +136,7 @@ class OptionParser(optparse.OptionParser):
 
         # Gather and run the process_<option> functions in the proper order
         process_option_funcs = []
-        for option_key in options.__dict__.keys():
+        for option_key in options.__dict__:
             process_option_func = getattr(
                 self, 'process_{0}'.format(option_key), None
             )
@@ -191,7 +191,7 @@ class OptionParser(optparse.OptionParser):
 
     def print_versions_report(self, file=sys.stdout):
         print('\n'.join(version.versions_report()), file=file)
-        self.exit(os.EX_OK)
+        self.exit(salt.exitcodes.EX_OK)
 
 
 class MergeConfigMixIn(object):
@@ -293,6 +293,8 @@ class SaltfileMixIn(object):
             saltfile = os.path.join(os.getcwd(), 'Saltfile')
             if os.path.isfile(saltfile):
                 self.options.saltfile = saltfile
+        else:
+            saltfile = self.options.saltfile
 
         if not self.options.saltfile:
             # There's still no valid Saltfile? No need to continue...
@@ -345,7 +347,7 @@ class SaltfileMixIn(object):
                 # one from Saltfile, if any
                 continue
 
-            # We reched this far! Set the Saltfile value on the option
+            # We reached this far! Set the Saltfile value on the option
             setattr(self.options, option.dest, cli_config[option.dest])
 
         # Let's also search for options referred in any option groups
@@ -371,6 +373,10 @@ class SaltfileMixIn(object):
                     setattr(self.options,
                             option.dest,
                             cli_config[option.dest])
+
+        # Any left over value in the saltfile can now be safely added
+        for key in cli_config:
+            setattr(self.options, key, cli_config[key])
 
 
 class HardCrashMixin(object):
@@ -658,11 +664,11 @@ class LogLevelMixIn(object):
             if self.config['user'] != current_user:
                 # Yep, not the same user!
                 # Is the current user in ACL?
-                if current_user in self.config.get('client_acl', {}).keys():
+                if current_user in self.config.get('client_acl', {}):
                     # Yep, the user is in ACL!
                     # Let's write the logfile to its home directory instead.
                     xdg_dir = salt.utils.xdg.xdg_config_dir()
-                    user_salt_dir = xdg_dir if os.path.isdir(xdg_dir) else '~/.salt'
+                    user_salt_dir = xdg_dir if os.path.isdir(xdg_dir) else os.path.expanduser('~/.salt')
 
                     if not os.path.isdir(user_salt_dir):
                         os.makedirs(user_salt_dir, 0750)
@@ -994,6 +1000,12 @@ class OutputOptionsMixIn(object):
             default=False,
             action='store_true',
             help='Force colored output'
+        )
+        group.add_option(
+            '--state-output', '--state_output',
+            default='full',
+            help=('Override the configured state_output value for minion output'
+                  '. Default: full')
         )
 
         for option in self.output_options_group.option_list:
@@ -1415,12 +1427,6 @@ class SaltCMDOptionParser(OptionParser, ConfigDirMixIn, MergeConfigMixIn,
             help=('Run the salt command but don\'t wait for a reply')
         )
         self.add_option(
-            '--state-output', '--state_output',
-            default='full',
-            help=('Override the configured state_output value for minion output'
-                  '. Default: full')
-        )
-        self.add_option(
             '--subset',
             default=0,
             type=int,
@@ -1627,7 +1633,7 @@ class SaltCPOptionParser(OptionParser, ConfigDirMixIn, MergeConfigMixIn,
         # salt-cp needs arguments
         if len(self.args) <= 1:
             self.print_help()
-            self.exit(os.EX_USAGE)
+            self.exit(salt.exitcodes.EX_USAGE)
 
         if self.options.list:
             if ',' in self.args[0]:
@@ -2018,7 +2024,7 @@ class SaltCallOptionParser(OptionParser, ConfigDirMixIn, MergeConfigMixIn,
     def _mixin_after_parsed(self):
         if not self.args and not self.options.grains_run and not self.options.doc:
             self.print_help()
-            self.exit(os.EX_USAGE)
+            self.exit(salt.exitcodes.EX_USAGE)
 
         elif len(self.args) >= 1:
             if self.options.grains_run:
@@ -2169,6 +2175,12 @@ class SaltSSHOptionParser(OptionParser, ConfigDirMixIn, MergeConfigMixIn,
                  'faster communication should be, default is %default'
         )
         self.add_option(
+            '--extra-filerefs',
+            dest='extra_filerefs',
+            default=None,
+            help='Pass in extra files to include in the state tarball'
+        )
+        self.add_option(
             '-v', '--verbose',
             default=False,
             action='store_true',
@@ -2242,7 +2254,7 @@ class SaltSSHOptionParser(OptionParser, ConfigDirMixIn, MergeConfigMixIn,
     def _mixin_after_parsed(self):
         if not self.args:
             self.print_help()
-            self.exit(os.EX_USAGE)
+            self.exit(salt.exitcodes.EX_USAGE)
 
         if self.options.list:
             if ',' in self.args[0]:
@@ -2255,7 +2267,7 @@ class SaltSSHOptionParser(OptionParser, ConfigDirMixIn, MergeConfigMixIn,
         self.config['argv'] = self.args[1:]
         if not self.config['argv'] or not self.config['tgt']:
             self.print_help()
-            self.exit(os.EX_USAGE)
+            self.exit(salt.exitcodes.EX_USAGE)
 
         if self.options.ssh_askpass:
             self.options.ssh_passwd = getpass.getpass('Password: ')
@@ -2289,7 +2301,7 @@ class SaltCloudParser(OptionParser,
     def print_versions_report(self, file=sys.stdout):
         print('\n'.join(version.versions_report(include_salt_cloud=True)),
               file=file)
-        self.exit(os.EX_OK)
+        self.exit(salt.exitcodes.EX_OK)
 
     def parse_args(self, args=None, values=None):
         try:
@@ -2306,7 +2318,7 @@ class SaltCloudParser(OptionParser,
 
             print('Salt cloud configuration dump(INCLUDES SENSIBLE DATA):')
             pprint.pprint(self.config)
-            self.exit(os.EX_OK)
+            self.exit(salt.exitcodes.EX_OK)
 
         if self.args:
             self.config['names'] = self.args

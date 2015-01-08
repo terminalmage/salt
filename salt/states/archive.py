@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 '''
-Archive states.
+Extract an archive
 
 .. versionadded:: 2014.1.0
 '''
@@ -11,6 +11,17 @@ import tarfile
 from contextlib import closing
 
 log = logging.getLogger(__name__)
+
+__virtualname__ = 'archive'
+
+
+def __virtual__():
+    '''
+    Only load if the npm module is available in __salt__
+    '''
+    return __virtualname__ \
+        if [x for x in __salt__ if x.startswith('archive.')] \
+        else False
 
 
 def extracted(name,
@@ -36,8 +47,7 @@ def extracted(name,
     .. code-block:: yaml
 
         graylog2-server:
-          archive:
-            - extracted
+          archive.extracted:
             - name: /opt/
             - source: https://github.com/downloads/Graylog2/graylog2-server/graylog2-server-0.9.6p1.tar.lzma
             - source_hash: md5=499ae16dcae71eeb7c3a30c75ea7a1a6
@@ -48,8 +58,7 @@ def extracted(name,
     .. code-block:: yaml
 
         graylog2-server:
-          archive:
-            - extracted
+          archive.extracted:
             - name: /opt/
             - source: https://github.com/downloads/Graylog2/graylog2-server/graylog2-server-0.9.6p1.tar.gz
             - source_hash: md5=499ae16dcae71eeb7c3a30c75ea7a1a6
@@ -93,7 +102,7 @@ def extracted(name,
 
     if archive_format not in valid_archives:
         ret['result'] = False
-        ret['comment'] = '{0} is not supported, valids: {1}'.format(
+        ret['comment'] = '{0} is not supported, valid formats are: {1}'.format(
             archive_format, ','.join(valid_archives))
         return ret
 
@@ -142,7 +151,7 @@ def extracted(name,
         log.debug('file.managed: {0}'.format(file_result))
         # get value of first key
         try:
-            file_result = file_result[file_result.keys()[0]]
+            file_result = file_result[file_result.iterkeys().next()]
         except AttributeError:
             pass
 
@@ -177,13 +186,13 @@ def extracted(name,
         else:
             log.debug('Untar {0} in {1}'.format(filename, name))
 
-            results = __salt__['cmd.run_all']('tar {0} -f {1!r}'.format(
-                tar_options, filename), cwd=name)
+            tar_cmd = ['tar', 'x{0}'.format(tar_options), '-f', repr(filename)]
+            results = __salt__['cmd.run_all'](tar_cmd, cwd=name, python_shell=False)
             if results['retcode'] != 0:
                 ret['result'] = False
                 ret['changes'] = results
                 return ret
-            if __salt__['cmd.retcode']('tar --version | grep bsdtar') == 0:
+            if __salt__['cmd.retcode']('tar --version | grep bsdtar', python_shell=True) == 0:
                 files = results['stderr']
             else:
                 files = results['stdout']

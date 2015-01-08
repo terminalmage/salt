@@ -458,7 +458,7 @@ def _get_network_conf(conf_tuples=None, **kwargs):
             new[iface]['lxc.network.hwaddr'] = omac
 
     ret = []
-    for v in new.values():
+    for v in new.itervalues():
         for row in v:
             ret.append({row: v[row]})
     return ret
@@ -556,7 +556,7 @@ class _LXCConfig(object):
         if self.name:
             self.path = '/var/lib/lxc/{0}/config'.format(self.name)
             if os.path.isfile(self.path):
-                with open(self.path) as f:
+                with salt.utils.fopen(self.path) as f:
                     for l in f.readlines():
                         match = self.pattern.findall((l.strip()))
                         if match:
@@ -602,8 +602,8 @@ class _LXCConfig(object):
         if self.path:
             content = self.as_string()
             # 2 step rendering to be sure not to open/wipe the config
-            # before as_string suceeds.
-            with open(self.path, 'w') as fic:
+            # before as_string succeeds.
+            with salt.utils.fopen(self.path, 'w') as fic:
                 fic.write(content)
                 fic.flush()
 
@@ -1673,9 +1673,10 @@ def info(name):
 
     ret = {}
 
-    config = [(v[0].strip(), v[1].strip()) for v in
-              [l.split('#', 1)[0].strip().split('=', 1) for l in
-               open(f).readlines()] if len(v) == 2]
+    with salt.utils.fopen(f) as fhr:
+        config = [(v[0].strip(), v[1].strip()) for v in
+                  [l.split('#', 1)[0].strip().split('=', 1) for l in
+                   fhr.readlines()] if len(v) == 2]
 
     ifaces = []
     current = None
@@ -1821,14 +1822,18 @@ def update_lxc_conf(name, lxc_conf, lxc_conf_unset):
         ret['comment'] = (
             'Configuration does not exist: {0}'.format(lxc_conf_p))
     else:
-        with open(lxc_conf_p, 'r') as fic:
+        with salt.utils.fopen(lxc_conf_p, 'r') as fic:
             filtered_lxc_conf = []
             for row in lxc_conf:
                 if not row:
                     continue
                 for conf in row:
-                    filtered_lxc_conf.append((conf.strip(),
-                                              row[conf].strip()))
+                    try:
+                        filtered_lxc_conf.append((conf.strip(),
+                                                  row[conf].strip()))
+                    except AttributeError:
+                        filtered_lxc_conf.append((conf.strip(),
+                                                  str(row[conf]).strip()))
             ret['comment'] = 'lxc.conf is up to date'
             lines = []
             orig_config = fic.read()
@@ -1878,12 +1883,10 @@ def update_lxc_conf(name, lxc_conf, lxc_conf_unset):
             conf_changed = conf != orig_config
             chrono = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
             if conf_changed:
-                wfic = open('{0}.{1}'.format(lxc_conf_p, chrono), 'w')
-                wfic.write(conf)
-                wfic.close()
-                wfic = open(lxc_conf_p, 'w')
-                wfic.write(conf)
-                wfic.close()
+                with salt.utils.fopen('{0}.{1}'.format(lxc_conf_p, chrono), 'w') as wfic:
+                    wfic.write(conf)
+                with salt.utils.fopen(lxc_conf_p, 'w') as wfic:
+                    wfic.write(conf)
                 ret['comment'] = 'Updated'
                 ret['result'] = True
     if (
@@ -2071,7 +2074,7 @@ def bootstrap(name, config=None, approve_key=True,
             __salt__['lxc.stop'](name)
         elif prior_state == 'frozen':
             __salt__['lxc.freeze'](name)
-        # mark seeded upon sucessful install
+        # mark seeded upon successful install
         if res:
             __salt__['lxc.run_cmd'](
                 name, 'sh -c \'touch "{0}";\''.format(SEED_MARKER))
@@ -2364,7 +2367,7 @@ def write_conf(conf_file, conf):
             if type(line) is str:
                 fp_.write(line)
             elif type(line) is dict:
-                key = line.keys()[0]
+                key = line.iterkeys().next()
                 out_line = None
                 if type(line[key]) is str:
                     out_line = ' = '.join((key, line[key]))
@@ -2410,7 +2413,7 @@ def edit_conf(conf_file, out_format='simple', **kwargs):
             data.append(line)
             continue
         else:
-            key = line.keys()[0]
+            key = line.iterkeys().next()
             if key not in kwargs:
                 data.append(line)
                 continue

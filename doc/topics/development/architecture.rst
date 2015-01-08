@@ -90,7 +90,7 @@ ReqServer
 ---------
 
 The Salt request server takes requests and distributes them to available MWorker
-processes for processing. It also recieves replies back from minions.
+processes for processing. It also receives replies back from minions.
 
 The ReqServer is bound to the following:
     * TCP: 4506
@@ -170,11 +170,11 @@ remotely.
 When starting up, salt minions connect _back_ to a master defined in the minion
 config file. The connect to two ports on the master:
 
-    * TCP:4505
+    * TCP: 4505
         This is the connection to the master Publisher. It is on this port that
         the minion receives jobs from the master.
 
-    * TCP:4506
+    * TCP: 4506
         This is the connection to the master ReqServer. It is on this port that
         the minion sends job results back to the master.
 
@@ -199,7 +199,7 @@ minion.
 Job Flow
 --------
 
-When a salt minion starts up, it attempts to connect to the Pubisher and the
+When a salt minion starts up, it attempts to connect to the Publisher and the
 ReqServer on the salt master. It then attempts to authenticate and once the 
 minion has successfully authenticated, it simply listens for jobs.
 

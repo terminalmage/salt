@@ -733,6 +733,8 @@ def symlink(
            'changes': {},
            'result': True,
            'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.symlink')
 
     if user is None:
         user = __opts__['user']
@@ -885,6 +887,8 @@ def absent(name):
            'changes': {},
            'result': True,
            'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.absent')
     if not os.path.isabs(name):
         return _error(
             ret, 'Specified file {0} is not an absolute path'.format(name)
@@ -935,6 +939,8 @@ def exists(name):
            'changes': {},
            'result': True,
            'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.exists')
     if not os.path.exists(name):
         return _error(ret, ('Specified path {0} does not exist').format(name))
 
@@ -954,6 +960,8 @@ def missing(name):
            'changes': {},
            'result': True,
            'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.missing')
     if os.path.exists(name):
         return _error(ret, ('Specified path {0} exists').format(name))
 
@@ -1190,9 +1198,14 @@ def managed(name,
     check_cmd
         .. versionadded:: 2014.7.0
 
-        Do run the state only if the check_cmd succeeds
-
+        The specified command will be run with the managed file as an argument.
+        If the command exits with a nonzero exit code, the command will not be
+        run.
     '''
+    # contents must be a string
+    if contents:
+        contents = str(contents)
+
     # Make sure that leading zeros stripped by YAML loader are added back
     mode = __salt__['config.manage_mode'](mode)
 
@@ -1208,6 +1221,12 @@ def managed(name,
             'to \'False\' to avoid reading the file unnecessarily'
         )
 
+    ret = {'changes': {},
+           'comment': '',
+           'name': name,
+           'result': True}
+    if not name:
+        return _error(ret, 'Must provide name to file.exists')
     user = _test_owner(kwargs, user=user)
     if salt.utils.is_windows():
         if group is not None:
@@ -1216,10 +1235,6 @@ def managed(name,
                 'is a Windows system.'.format(name)
             )
         group = user
-    ret = {'changes': {},
-           'comment': '',
-           'name': name,
-           'result': True}
     if not create:
         if not os.path.isfile(name):
             # Don't create a file that is not already present
@@ -1292,7 +1307,8 @@ def managed(name,
 
     try:
         if __opts__['test']:
-            ret['result'], ret['comment'] = __salt__['file.check_managed'](
+            ret['result'] = None
+            ret['changes'] = __salt__['file.check_managed_changes'](
                 name,
                 source,
                 source_hash,
@@ -1306,6 +1322,12 @@ def managed(name,
                 contents,
                 **kwargs
             )
+
+            if ret['changes']:
+                ret['comment'] = 'The file {0} is set to be changed'.format(name)
+            else:
+                ret['comment'] = 'The file {0} is in the correct state'.format(name)
+
             return ret
 
         # If the source is a list then find which file exists
@@ -1379,14 +1401,12 @@ def managed(name,
                    'comment': '',
                    'name': name,
                    'result': True}
-            check_cmd_opts = {
-                'cmd': check_cmd,
-                'cwd': tmp_filename,
-            }
+
+            check_cmd_opts = {}
             if 'shell' in __grains__:
                 check_cmd_opts['shell'] = __grains__['shell']
 
-            cret = mod_run_check_cmd(**check_cmd_opts)
+            cret = mod_run_check_cmd(check_cmd, tmp_filename, **check_cmd_opts)
             if isinstance(cret, dict):
                 ret.update(cret)
                 return ret
@@ -1522,6 +1542,12 @@ def directory(name,
         .. versionadded:: 2014.7.0
 
     '''
+    ret = {'name': name,
+           'changes': {},
+           'result': True,
+           'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.directory')
     # Remove trailing slash, if present
     if name[-1] == '/':
         name = name[:-1]
@@ -1545,10 +1571,6 @@ def directory(name,
     dir_mode = __salt__['config.manage_mode'](dir_mode)
     file_mode = __salt__['config.manage_mode'](file_mode)
 
-    ret = {'name': name,
-           'changes': {},
-           'result': True,
-           'comment': ''}
     u_check = _check_user(user, group)
     if u_check:
         # The specified user or group do not exist
@@ -2147,7 +2169,7 @@ def recurse(name,
             # Check for symlinks that happen to point to an empty dir.
             if keep_symlinks:
                 islink = False
-                for link in symlinks.keys():
+                for link in symlinks:
                     if mdir.startswith(link, 0):
                         log.debug('** skipping empty dir ** {0}, it intersects'
                                   ' a symlink'.format(mdir))
@@ -2200,7 +2222,7 @@ def replace(name,
             not_found_content=None,
             backup='.bak',
             show_changes=True):
-    '''
+    r'''
     Maintain an edit in a file
 
     .. versionadded:: 0.17.0
@@ -2208,8 +2230,21 @@ def replace(name,
     Params are identical to the remote execution function :mod:`file.replace
     <salt.modules.file.replace>`.
 
+    For complex regex patterns it can be useful to avoid the need for complex
+    quoting and escape sequences by making use of YAML's multiline string
+    syntax.
+
+    .. code-block:: yaml
+
+        complex_search_and_replace:
+          file.replace:
+            # <...snip...>
+            - pattern: |
+                CentOS \(2.6.32[^\n]+\n\s+root[^\n]+\n\)+
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.replace')
 
     check_res, check_msg = _check_file(name)
     if not check_res:
@@ -2331,6 +2366,8 @@ def blockreplace(
         # END managed zone 42 --
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.blockreplace')
 
     check_res, check_msg = _check_file(name)
     if not check_res:
@@ -2546,6 +2583,8 @@ def comment(name, regex, char='#', backup='.bak'):
     .. versionadded:: 0.9.5
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.comment')
 
     check_res, check_msg = _check_file(name)
     if not check_res:
@@ -2626,6 +2665,8 @@ def uncomment(name, regex, char='#', backup='.bak'):
     .. versionadded:: 0.9.5
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.uncomment')
 
     check_res, check_msg = _check_file(name)
     if not check_res:
@@ -2829,6 +2870,8 @@ def append(name,
     .. versionadded:: 0.9.5
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.append')
 
     if sources is None:
         sources = []
@@ -3008,6 +3051,8 @@ def prepend(name,
     .. versionadded:: 2014.7.0
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.prepend')
 
     if sources is None:
         sources = []
@@ -3173,6 +3218,8 @@ def patch(name,
             - hash: md5=e138491e9d5b97023cea823fe17bac22
     '''
     ret = {'name': name, 'changes': {}, 'result': False, 'comment': ''}
+    if not name:
+        return _error(ret, 'Must provide name to file.patch')
     check_res, check_msg = _check_file(name)
     if not check_res:
         return _error(ret, check_msg)
@@ -3271,6 +3318,8 @@ def touch(name, atime=None, mtime=None, makedirs=False):
         'name': name,
         'changes': {},
     }
+    if not name:
+        return _error(ret, 'Must provide name to file.touch')
     if not os.path.isabs(name):
         return _error(
             ret, 'Specified file {0} is not an absolute path'.format(name)
@@ -3327,6 +3376,8 @@ def copy(name, source, force=False, makedirs=False):
         'changes': {},
         'comment': '',
         'result': True}
+    if not name:
+        return _error(ret, 'Must provide name to file.comment')
 
     if not os.path.isabs(name):
         return _error(
@@ -3411,6 +3462,8 @@ def rename(name, source, force=False, makedirs=False):
         'changes': {},
         'comment': '',
         'result': True}
+    if not name:
+        return _error(ret, 'Must provide name to file.rename')
 
     if not os.path.isabs(name):
         return _error(
@@ -3540,6 +3593,8 @@ def accumulated(name, filename, text, **kwargs):
         'result': True,
         'comment': ''
     }
+    if not name:
+        return _error(ret, 'Must provide name to file.accumulated')
     if text is None:
         ret['result'] = False
         ret['comment'] = 'No text supplied for accumulator'
@@ -3564,7 +3619,7 @@ def accumulated(name, filename, text, **kwargs):
     if name not in _ACCUMULATORS_DEPS[filename]:
         _ACCUMULATORS_DEPS[filename][name] = []
     for accumulator in deps:
-        _ACCUMULATORS_DEPS[filename][name].extend(accumulator.values())
+        _ACCUMULATORS_DEPS[filename][name].extend(accumulator.itervalues())
     if name not in _ACCUMULATORS[filename]:
         _ACCUMULATORS[filename][name] = []
     for chunk in text:
@@ -3711,6 +3766,8 @@ def serialize(name,
            'comment': '',
            'name': name,
            'result': True}
+    if not name:
+        return _error(ret, 'Must provide name to file.serialize')
 
     if isinstance(env, salt._compat.string_types):
         msg = (
@@ -3780,6 +3837,13 @@ def serialize(name,
                 'name': name,
                 'result': False
                 }
+
+    if __opts__['test']:
+        ret['comment'] = (
+            'Dataset will be serialized and stored into {0}'
+        ).format(name)
+        ret['result'] = None
+        return ret
 
     return __salt__['file.manage_file'](name=name,
                                         sfn='',
@@ -3871,6 +3935,8 @@ def mknod(name, ntype, major=0, minor=0, user=None, group=None, mode='0600'):
            'changes': {},
            'comment': '',
            'result': False}
+    if not name:
+        return _error(ret, 'Must provide name to file.mknod')
 
     if ntype == 'c':
         # Check for file existence
@@ -4010,7 +4076,7 @@ def mknod(name, ntype, major=0, minor=0, user=None, group=None, mode='0600'):
     return ret
 
 
-def mod_run_check_cmd(cmd, filename):
+def mod_run_check_cmd(cmd, filename, **check_cmd_opts):
     '''
     Execute the check_cmd logic
     Return a result dict if:
@@ -4020,10 +4086,10 @@ def mod_run_check_cmd(cmd, filename):
 
     log.debug('running our check_cmd')
     _cmd = '{0} {1}'.format(cmd, filename)
-    if __salt__['cmd.retcode'](_cmd) != 0:
+    if __salt__['cmd.retcode'](_cmd, **check_cmd_opts) != 0:
         return {'comment': 'check_cmd execution failed',
                 'skip_watch': True,
-                'result': True}
+                'result': False}
 
     # No reason to stop, return True
     return True

@@ -211,7 +211,7 @@ def _xml_to_dict(xmltree):
         if '}' in name:
             comps = name.split('}')
             name = comps[1]
-        if name not in xmldict.keys():
+        if name not in xmldict:
             if sys.version_info < (2, 7):
                 children_len = len(item.getchildren())
             else:
@@ -314,7 +314,7 @@ def query(params=None, setname=None, requesturl=None, location=None,
         params_with_headers['SignatureMethod'] = 'HmacSHA256'
         params_with_headers['Timestamp'] = '{0}'.format(timestamp)
         params_with_headers['Version'] = ec2_api_version
-        keys = sorted(params_with_headers.keys())
+        keys = sorted(params_with_headers)
         values = map(params_with_headers.get, keys)
         querystring = urllib.urlencode(list(zip(keys, values)))
 
@@ -913,7 +913,7 @@ def get_availability_zone(vm_):
     zones = list_availability_zones()
 
     # Validate user-specified AZ
-    if avz not in zones.keys():
+    if avz not in zones:
         raise SaltCloudException(
             'The specified availability zone isn\'t valid in this region: '
             '{0}\n'.format(
@@ -1793,7 +1793,7 @@ def wait_for_instance(
                                         gateway=ssh_gateway_config
                                         ):
         # If a known_hosts_file is configured, this instance will not be
-        # accessable until it has a host key. Since this is provided on
+        # accessible until it has a host key. Since this is provided on
         # supported instances by cloud-init, and viewable to us only from the
         # console output (which may take several minutes to become available,
         # we have some more waiting to do here.
@@ -1963,7 +1963,7 @@ def create(vm_=None, call=None):
             '\'tag\' should be a dict.'
         )
 
-    for value in tags.values():
+    for value in tags.itervalues():
         if not isinstance(value, str):
             raise SaltCloudConfigError(
                 '\'tag\' values must be strings. Try quoting the values. '
@@ -2019,7 +2019,7 @@ def create(vm_=None, call=None):
         vm_, data, ip_address, display_ssh_output
     )
 
-    # The instance is booted and accessable, let's Salt it!
+    # The instance is booted and accessible, let's Salt it!
     ret = salt.utils.cloud.bootstrap(vm_, __opts__)
 
     log.info('Created Cloud VM {0[name]!r}'.format(vm_))
@@ -2093,7 +2093,7 @@ def queue_instances(instances):
         salt.utils.cloud.cache_node(node, __active_provider_name__, __opts__)
 
 
-def create_attach_volumes(name, kwargs, call=None):
+def create_attach_volumes(name, kwargs, call=None, wait_to_finish=True):
     '''
     Create and attach volumes to created node
     '''
@@ -2133,7 +2133,7 @@ def create_attach_volumes(name, kwargs, call=None):
                 volume_dict['iops'] = volume['iops']
 
         if 'volume_id' not in volume_dict:
-            created_volume = create_volume(volume_dict, call='function')
+            created_volume = create_volume(volume_dict, call='function', wait_to_finish=wait_to_finish)
             created = True
             for item in created_volume:
                 if 'volumeId' in item:
@@ -2608,7 +2608,7 @@ def list_nodes_full(location=None, call=None):
     if not location:
         ret = {}
         locations = set(
-            get_location(vm_) for vm_ in __opts__['profiles'].values()
+            get_location(vm_) for vm_ in __opts__['profiles'].itervalues()
             if _vm_provider_driver(vm_)
         )
         for loc in locations:
@@ -3015,7 +3015,10 @@ def _toggle_delvol(name=None, instance_id=None, device=None, volume_id=None,
 
     query(params, return_root=True)
 
-    return query(requesturl=requesturl)
+    kwargs = {'instance_id': instance_id,
+              'device': device,
+              'volume_id': volume_id}
+    return show_delvol_on_destroy(name, kwargs, call='action')
 
 
 def create_volume(kwargs=None, call=None, wait_to_finish=False):
@@ -3469,9 +3472,9 @@ def get_console_output(
     ret = {}
     data = query(params, return_root=True)
     for item in data:
-        if item.keys()[0] == 'output':
-            ret['output_decoded'] = binascii.a2b_base64(item.values()[0])
+        if item.iterkeys().next() == 'output':
+            ret['output_decoded'] = binascii.a2b_base64(item.itervalues().next())
         else:
-            ret[item.keys()[0]] = item.values()[0]
+            ret[item.iterkeys().next()] = item.itervalues().next()
 
     return ret

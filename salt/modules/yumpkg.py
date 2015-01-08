@@ -18,7 +18,12 @@ import copy
 import logging
 import os
 import re
-from distutils.version import LooseVersion as _LooseVersion
+from distutils.version import LooseVersion as _LooseVersion  # pylint: disable=import-error,no-name-in-module
+
+try:
+    from shlex import quote as _cmd_quote  # pylint: disable=E0611
+except ImportError:
+    from pipes import quote as _cmd_quote  # pylint: disable=E0611
 
 # Import salt libs
 import salt.utils
@@ -133,10 +138,13 @@ def _repoquery(repoquery_args, query_format=__QUERYFORMAT):
     Runs a repoquery command and returns a list of namedtuples
     '''
     _check_repoquery()
-    cmd = 'repoquery --plugins --queryformat="{0}" {1}'.format(
-        query_format, repoquery_args
+    cmd = 'repoquery --plugins --queryformat {0} {1}'.format(
+        _cmd_quote(query_format), repoquery_args
     )
-    out = __salt__['cmd.run_stdout'](cmd, output_loglevel='trace')
+    out = __salt__['cmd.run_stdout'](
+            cmd,
+            output_loglevel='trace'
+            )
     return out.splitlines()
 
 
@@ -213,10 +221,10 @@ def _rpm_pkginfo(name):
     Parses RPM metadata and returns a pkginfo namedtuple
     '''
     # REPOID is not a valid tag for the rpm command. Remove it and replace it
-    # witn "none"
+    # with "none"
     queryformat = __QUERYFORMAT.replace('%{REPOID}', 'none')
     output = __salt__['cmd.run_stdout'](
-        'rpm -qp --queryformat {0!r} {1}'.format(queryformat, name),
+        'rpm -qp --queryformat {0!r} {1}'.format(_cmd_quote(queryformat), name),
         output_loglevel='trace',
         ignore_retcode=True
     )
@@ -614,8 +622,10 @@ def refresh_db(**kwargs):
     }
     branch_arg = _get_branch_option(**kwargs)
 
-    cmd = 'yum -q clean expire-cache && yum -q check-update {0}'.format(branch_arg)
-    ret = __salt__['cmd.retcode'](cmd, ignore_retcode=True)
+    clean_cmd = 'yum -q clean expire-cache'
+    __salt__['cmd.run'](clean_cmd)
+    update_cmd = 'yum -q check-update {0}'.format(branch_arg)
+    ret = __salt__['cmd.retcode'](update_cmd, ignore_retcode=True)
     return retcodes.get(ret, False)
 
 
@@ -954,7 +964,7 @@ def install(name=None,
             exclude=exclude_arg,
             branch=branch_arg,
             gpgcheck='--nogpgcheck' if skip_verify else '',
-            pkg=' '.join(to_reinstall.values()),
+            pkg=' '.join(to_reinstall.itervalues()),
         )
         __salt__['cmd.run'](cmd, output_loglevel='trace')
 
@@ -1070,7 +1080,8 @@ def remove(name=None, pkgs=None, **kwargs):  # pylint: disable=W0613
     targets = [x for x in pkg_params if x in old]
     if not targets:
         return {}
-    cmd = 'yum -q -y remove "{0}"'.format('" "'.join(targets))
+    quoted_targets = [_cmd_quote(target) for target in targets]
+    cmd = 'yum -q -y remove {0}'.format(' '.join(quoted_targets))
     __salt__['cmd.run'](cmd, output_loglevel='trace')
     __context__.pop('pkg.list_pkgs', None)
     new = list_pkgs()
@@ -1150,7 +1161,7 @@ def hold(name=None, pkgs=None, sources=None, **kwargs):  # pylint: disable=W0613
 
     targets = []
     if pkgs:
-        for pkg in pkgs:
+        for pkg in salt.utils.repack_dictlist(pkgs):
             ret = check_db(pkg)
             if not ret[pkg]['found']:
                 raise SaltInvocationError(
@@ -1243,7 +1254,8 @@ def unhold(name=None, pkgs=None, sources=None, **kwargs):  # pylint: disable=W06
 
     targets = []
     if pkgs:
-        targets.extend(pkgs)
+        for pkg in salt.utils.repack_dictlist(pkgs):
+            targets.append(pkg)
     elif sources:
         for source in sources:
             targets.append(next(iter(source)))
@@ -1269,8 +1281,10 @@ def unhold(name=None, pkgs=None, sources=None, **kwargs):  # pylint: disable=W06
                 ret[target]['comment'] = ('Package {0} is set to be unheld.'
                                           .format(target))
             else:
-                _targets = ' '.join('"' + item + '"' for item in search_locks)
-                cmd = 'yum -q versionlock delete {0}'.format(_targets)
+                quoted_targets = [_cmd_quote(item) for item in search_locks]
+                cmd = 'yum -q versionlock delete {0}'.format(
+                        ' '.join(quoted_targets)
+                        )
                 out = __salt__['cmd.run_all'](cmd)
 
                 if out['retcode'] == 0:
@@ -1416,9 +1430,9 @@ def group_info(name):
         'default packages': [],
         'description': ''
     }
-    cmd_template = 'repoquery --plugins --group --grouppkgs={0} --list {1!r}'
+    cmd_template = 'repoquery --plugins --group --grouppkgs={0} --list {1}'
 
-    cmd = cmd_template.format('all', name)
+    cmd = cmd_template.format('all', _cmd_quote(name))
     out = __salt__['cmd.run_stdout'](cmd, output_loglevel='trace')
     all_pkgs = set(out.splitlines())
 
@@ -1426,7 +1440,7 @@ def group_info(name):
         raise CommandExecutionError('Group {0!r} not found'.format(name))
 
     for pkgtype in ('mandatory', 'optional', 'default'):
-        cmd = cmd_template.format(pkgtype, name)
+        cmd = cmd_template.format(pkgtype, _cmd_quote(name))
         packages = set(
             __salt__['cmd.run_stdout'](
                 cmd, output_loglevel='trace'
@@ -1440,8 +1454,10 @@ def group_info(name):
     # considered to be conditional packages.
     ret['conditional packages'] = sorted(all_pkgs)
 
-    cmd = 'repoquery --plugins --group --info {0!r}'.format(name)
-    out = __salt__['cmd.run_stdout'](cmd, output_loglevel='trace')
+    cmd = 'repoquery --plugins --group --info {0}'.format(_cmd_quote(name))
+    out = __salt__['cmd.run_stdout'](
+            cmd, output_loglevel='trace'
+            )
     if out:
         ret['description'] = '\n'.join(out.splitlines()[1:]).strip()
 
@@ -1823,12 +1839,17 @@ def owner(*paths):
     if not paths:
         return ''
     ret = {}
-    cmd = 'rpm -qf --queryformat "%{{NAME}}" {0!r}'
     for path in paths:
-        ret[path] = __salt__['cmd.run_stdout'](cmd.format(path),
-                                               output_loglevel='trace')
+        cmd = 'rpm -qf --queryformat {0} {1!r}'.format(
+                _cmd_quote('%{{NAME}}'),
+                path
+                )
+        ret[path] = __salt__['cmd.run_stdout'](
+                cmd.format(path),
+                output_loglevel='trace'
+                )
         if 'not owned' in ret[path].lower():
             ret[path] = ''
     if len(ret) == 1:
-        return ret.values()[0]
+        return ret.itervalues().next()
     return ret

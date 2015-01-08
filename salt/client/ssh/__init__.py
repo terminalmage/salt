@@ -17,6 +17,8 @@ import re
 import time
 import yaml
 import uuid
+import tempfile
+import binascii
 
 # Import salt libs
 import salt.client.ssh.shell
@@ -72,7 +74,7 @@ RSTR_RE = r'(?:^|\r?\n)' + RSTR + '(?:\r?\n|$)'
 #   1) Make the _thinnest_ /bin/sh shim (SSH_SH_SHIM) to find the python
 #      interpreter and get it invoked
 #   2) Once a qualified python is found start it with the SSH_PY_SHIM
-#   3) The shim is converted to a single semicolon seperated line, so
+#   3) The shim is converted to a single semicolon separated line, so
 #      some constructs are needed to keep it clean.
 
 # NOTE:
@@ -138,7 +140,7 @@ if not is_windows():
     if not os.path.exists(shim_file):
         # On esky builds we only have the .pyc file
         shim_file += "c"
-    with open(shim_file) as ssh_py_shim:
+    with salt.utils.fopen(shim_file) as ssh_py_shim:
         SSH_PY_SHIM = ssh_py_shim.read()
 
 log = logging.getLogger(__name__)
@@ -214,6 +216,7 @@ class SSH(object):
         self.serial = salt.payload.Serial(opts)
         self.returners = salt.loader.returners(self.opts, {})
         self.fsclient = salt.fileclient.FSClient(self.opts)
+        self.thin = salt.utils.thin.gen_thin(self.opts['cachedir'])
         self.mods = mod_data(self.fsclient)
 
     def get_pubkey(self):
@@ -229,7 +232,7 @@ class SSH(object):
                     )
                 )
         pub = '{0}.pub'.format(priv)
-        with open(pub, 'r') as fp_:
+        with salt.utils.fopen(pub, 'r') as fp_:
             return '{0} rsa root@master'.format(fp_.read().split()[1])
 
     def key_deploy(self, host, ret):
@@ -272,6 +275,7 @@ class SSH(object):
                 host,
                 mods=self.mods,
                 fsclient=self.fsclient,
+                thin=self.thin,
                 **target)
         if salt.utils.which('ssh-copy-id'):
             # we have ssh-copy-id, use it!
@@ -286,6 +290,7 @@ class SSH(object):
                     host,
                     mods=self.mods,
                     fsclient=self.fsclient,
+                    thin=self.thin,
                     **target)
             stdout, stderr, retcode = single.cmd_block()
             try:
@@ -295,7 +300,7 @@ class SSH(object):
                 if stderr:
                     return {host: stderr}
                 return {host: 'Bad Return'}
-        if os.EX_OK != retcode:
+        if salt.exitcodes.EX_OK != retcode:
             return {host: stderr}
         return {host: stdout}
 
@@ -310,6 +315,7 @@ class SSH(object):
                 host,
                 mods=self.mods,
                 fsclient=self.fsclient,
+                thin=self.thin,
                 **target)
         ret = {'id': single.id}
         stdout, stderr, retcode = single.run()
@@ -441,7 +447,7 @@ class SSH(object):
         sret = {}
         outputter = self.opts.get('output', 'nested')
         for ret in self.handle_ssh():
-            host = ret.keys()[0]
+            host = ret.iterkeys().next()
             self.cache_job(jid, host, ret[host])
             ret = self.key_deploy(host, ret)
             if not isinstance(ret[host], dict):
@@ -494,8 +500,10 @@ class Single(object):
             tty=False,
             mods=None,
             fsclient=None,
+            thin=None,
             **kwargs):
         self.opts = opts
+        self.tty = tty
         if kwargs.get('wipe'):
             self.wipe = 'False'
         else:
@@ -546,6 +554,7 @@ class Single(object):
         self.serial = salt.payload.Serial(opts)
         self.wfuncs = salt.loader.ssh_wrapper(opts, None, self.context)
         self.shell = salt.client.ssh.shell.Shell(opts, **args)
+        self.thin = thin if thin else salt.utils.thin.thin_path(opts['cachedir'])
 
     def __arg_comps(self):
         '''
@@ -585,13 +594,8 @@ class Single(object):
         '''
         Deploy salt-thin
         '''
-        if self.opts.get('_caller_cachedir'):
-            cachedir = self.opts.get('_caller_cachedir')
-        else:
-            cachedir = self.opts['cachedir']
-        thin = salt.utils.thin.gen_thin(cachedir)
         self.shell.send(
-            thin,
+            self.thin,
             os.path.join(self.thin_dir, 'salt-thin.tgz'),
         )
         self.deploy_ext()
@@ -676,6 +680,7 @@ class Single(object):
             opts_pkg['file_roots'] = self.opts['file_roots']
             opts_pkg['pillar_roots'] = self.opts['pillar_roots']
             opts_pkg['ext_pillar'] = self.opts['ext_pillar']
+            opts_pkg['extension_modules'] = self.opts['extension_modules']
             opts_pkg['_ssh_version'] = self.opts['_ssh_version']
             if '_caller_cachedir' in self.opts:
                 opts_pkg['_caller_cachedir'] = self.opts['_caller_cachedir']
@@ -734,7 +739,7 @@ class Single(object):
         except TypeError as exc:
             result = 'TypeError encountered executing {0}: {1}'.format(self.fun, exc)
         except Exception as exc:
-            result = 'An Exception occured while executing {0}: {1}'.format(self.fun, exc)
+            result = 'An Exception occurred while executing {0}: {1}'.format(self.fun, exc)
         # Mimic the json data-structure that "salt-call --local" will
         # emit (as seen in ssh_py_shim.py)
         if isinstance(result, dict) and 'local' in result:
@@ -766,7 +771,8 @@ OPTIONS.hashfunc = '{4}'
 OPTIONS.version = '{5}'
 OPTIONS.ext_mods = '{6}'
 OPTIONS.wipe = {7}
-ARGS = {8}\n'''.format(self.minion_config,
+OPTIONS.tty = {8}
+ARGS = {9}\n'''.format(self.minion_config,
                          RSTR,
                          self.thin_dir,
                          thin_sum,
@@ -774,6 +780,7 @@ ARGS = {8}\n'''.format(self.minion_config,
                          salt.__version__,
                          self.mods.get('version', ''),
                          self.wipe,
+                         self.tty,
                          self.argv)
         py_code = SSH_PY_SHIM.replace('#%%OPTS', arg_str)
         py_code_enc = py_code.encode('base64')
@@ -803,6 +810,44 @@ ARGS = {8}\n'''.format(self.minion_config,
         for stdout, stderr, retcode in self.shell.exec_nb_cmd(cmd_str):
             yield stdout, stderr, retcode
 
+    def shim_cmd(self, cmd_str):
+        '''
+        Run a shim command.
+
+        If tty is enabled, we must scp the shim to the target system and
+        execute it there
+        '''
+        if not self.tty:
+            return self.shell.exec_cmd(cmd_str)
+
+        # Write the shim to a file
+        shim_dir = os.path.join(self.opts['cachedir'], 'ssh_shim')
+        if not os.path.exists(shim_dir):
+            os.makedirs(shim_dir)
+        with tempfile.NamedTemporaryFile(mode='w',
+                                         prefix='shim_',
+                                         dir=shim_dir,
+                                         delete=False) as shim_tmp_file:
+            shim_tmp_file.write(cmd_str)
+
+        # Copy shim to target system, under $HOME/.<randomized name>
+        target_shim_file = '.{0}'.format(binascii.hexlify(os.urandom(6)))
+        self.shell.send(shim_tmp_file.name, target_shim_file)
+
+        # Remove our shim file
+        try:
+            os.remove(shim_tmp_file.name)
+        except IOError:
+            pass
+
+        # Execute shim
+        ret = self.shell.exec_cmd('/bin/sh $HOME/{0}'.format(target_shim_file))
+
+        # Remove shim from target system
+        self.shell.exec_cmd('rm $HOME/{0}'.format(target_shim_file))
+
+        return ret
+
     def cmd_block(self, is_retry=False):
         '''
         Prepare the pre-check command to send to the subsystem
@@ -816,7 +861,7 @@ ARGS = {8}\n'''.format(self.minion_config,
 
         log.debug('Performing shimmed, blocking command as follows:\n{0}'.format(' '.join(self.argv)))
         cmd_str = self._cmd_str()
-        stdout, stderr, retcode = self.shell.exec_cmd(cmd_str)
+        stdout, stderr, retcode = self.shim_cmd(cmd_str)
 
         log.debug('STDOUT {1}\n{0}'.format(stdout, self.target['host']))
         log.debug('STDERR {1}\n{0}'.format(stderr, self.target['host']))
@@ -826,7 +871,7 @@ ARGS = {8}\n'''.format(self.minion_config,
         if error:
             if error == 'Undefined SHIM state':
                 self.deploy()
-                stdout, stderr, retcode = self.shell.exec_cmd(cmd_str)
+                stdout, stderr, retcode = self.shim_cmd(cmd_str)
                 if not re.search(RSTR_RE, stdout) or not re.search(RSTR_RE, stderr):
                     # If RSTR is not seen in both stdout and stderr then there
                     # was a thin deployment problem.
@@ -855,16 +900,24 @@ ARGS = {8}\n'''.format(self.minion_config,
             shim_command = re.split(r'\r?\n', stdout, 1)[0].strip()
             if 'deploy' == shim_command and retcode == salt.exitcodes.EX_THIN_DEPLOY:
                 self.deploy()
-                stdout, stderr, retcode = self.shell.exec_cmd(cmd_str)
+                stdout, stderr, retcode = self.shim_cmd(cmd_str)
                 if not re.search(RSTR_RE, stdout) or not re.search(RSTR_RE, stderr):
-                    # If RSTR is not seen in both stdout and stderr then there
-                    # was a thin deployment problem.
-                    return 'ERROR: Failure deploying thin: {0}\n{1}'.format(stdout, stderr), stderr, retcode
+                    if not self.tty:
+                        # If RSTR is not seen in both stdout and stderr then there
+                        # was a thin deployment problem.
+                        return 'ERROR: Failure deploying thin: {0}\n{1}'.format(stdout, stderr), stderr, retcode
+                    elif not re.search(RSTR_RE, stdout):
+                        # If RSTR is not seen in stdout with tty, then there
+                        # was a thin deployment problem.
+                        return 'ERROR: Failure deploying thin: {0}\n{1}'.format(stdout, stderr), stderr, retcode
                 stdout = re.split(RSTR_RE, stdout, 1)[1].strip()
-                stderr = re.split(RSTR_RE, stderr, 1)[1].strip()
+                if self.tty:
+                    stderr = ''
+                else:
+                    stderr = re.split(RSTR_RE, stderr, 1)[1].strip()
             elif 'ext_mods' == shim_command:
                 self.deploy_ext()
-                stdout, stderr, retcode = self.shell.exec_cmd(cmd_str)
+                stdout, stderr, retcode = self.shim_cmd(cmd_str)
                 if not re.search(RSTR_RE, stdout) or not re.search(RSTR_RE, stderr):
                     # If RSTR is not seen in both stdout and stderr then there
                     # was a thin deployment problem.
@@ -909,7 +962,7 @@ ARGS = {8}\n'''.format(self.minion_config,
                 'The salt thin transfer was corrupted'
             ),
             (
-                (os.EX_CANTCREAT,),
+                (salt.exitcodes.EX_CANTCREAT,),
                 'salt path .* exists but is not a directory',
                 'A necessary path for salt thin unexpectedly exists:\n ' + stderr,
             ),
@@ -934,7 +987,7 @@ ARGS = {8}\n'''.format(self.minion_config,
                 perm_error_fmt.format(stderr)
             ),
             (
-                (os.EX_SOFTWARE,),
+                (salt.exitcodes.EX_SOFTWARE,),
                 'exists but is not',
                 'An internal error occurred with the shim, please investigate:\n ' + stderr,
             ),

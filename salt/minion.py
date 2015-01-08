@@ -103,10 +103,10 @@ def resolve_dns(opts):
             if opts['retry_dns']:
                 while True:
                     import salt.log
-                    msg = ('Master hostname: {0} not found. Retrying in {1} '
+                    msg = ('Master hostname: \'{0}\' not found. Retrying in {1} '
                            'seconds').format(opts['master'], opts['retry_dns'])
                     if salt.log.is_console_configured():
-                        log.warn(msg)
+                        log.error(msg)
                     else:
                         print('WARNING: {0}'.format(msg))
                     time.sleep(opts['retry_dns'])
@@ -187,7 +187,7 @@ def load_args_and_kwargs(func, args, data=None):
                     'by salt.utils.args.parse_input() before calling '
                     'salt.minion.load_args_and_kwargs().'
                 )
-                if argspec.keywords or string_kwarg.keys()[0] in argspec.args:
+                if argspec.keywords or string_kwarg.iterkeys().next() in argspec.args:
                     # Function supports **kwargs or is a positional argument to
                     # the function.
                     _kwargs.update(string_kwarg)
@@ -510,7 +510,7 @@ class MultiMinion(MinionBase):
         while True:
             module_refresh = False
             pillar_refresh = False
-            for minion in minions.values():
+            for minion in minions.itervalues():
                 if isinstance(minion, dict):
                     minion = minion['minion']
                 if not hasattr(minion, 'schedule'):
@@ -569,6 +569,7 @@ class Minion(MinionBase):
         Pass in the options dict
         '''
         self._running = None
+        self.win_proc = []
 
         # Warn if ZMQ < 3.2
         if HAS_ZMQ:
@@ -708,6 +709,8 @@ class Minion(MinionBase):
                              ' {0}'.format(opts['master']))
                     if opts['master_shuffle']:
                         shuffle(opts['master'])
+                elif opts['__role'] == 'syndic':
+                    log.info('Syndic setting master_syndic to \'{0}\''.format(opts['master']))
 
                 # if failed=True, the minion was previously connected
                 # we're probably called from the minions main-event-loop
@@ -982,6 +985,8 @@ class Minion(MinionBase):
         process.start()
         if not sys.platform.startswith('win'):
             process.join()
+        else:
+            self.win_proc.append(process)
 
     @classmethod
     def _thread_return(cls, minion_instance, opts, data):
@@ -1079,6 +1084,8 @@ class Minion(MinionBase):
                 ret['out'] = 'nested'
         else:
             ret['return'] = '{0!r} is not available.'.format(function_name)
+            ret['success'] = False
+            ret['retcode'] = 254
             ret['out'] = 'nested'
 
         ret['jid'] = data['jid']
@@ -1499,6 +1506,21 @@ class Minion(MinionBase):
                 exc_info=err
             )
 
+    def _windows_thread_cleanup(self):
+        '''
+        Cleanup Windows threads
+        '''
+        if not salt.utils.is_windows():
+            return
+        for thread in self.win_proc:
+            if not thread.is_alive():
+                thread.join()
+                try:
+                    self.win_proc.remove(thread)
+                    del thread
+                except (ValueError, NameError):
+                    pass
+
     # Main Minion Tune In
     def tune_in(self):
         '''
@@ -1564,6 +1586,7 @@ class Minion(MinionBase):
 
         while self._running is True:
             loop_interval = self.process_schedule(self, loop_interval)
+            self._windows_thread_cleanup()
             try:
                 socks = self._do_poll(loop_interval)
 
@@ -1620,7 +1643,7 @@ class Minion(MinionBase):
                                     log.info('Trying to tune in to next master from master-list')
 
                                     # if eval_master finds a new master for us, self.connected
-                                    # will be True again on successfull master authentication
+                                    # will be True again on successful master authentication
                                     self.opts['master'] = self.eval_master(opts=self.opts,
                                                                            failed=True)
                                     if self.connected:
@@ -1653,7 +1676,7 @@ class Minion(MinionBase):
                                                                  schedule=schedule)
 
                         elif package.startswith('__master_connected'):
-                            # handle this event only once. otherwise it will polute the log
+                            # handle this event only once. otherwise it will pollute the log
                             if not self.connected:
                                 log.info('Connection to master {0} re-established'.format(self.opts['master']))
                                 self.connected = True
@@ -2246,7 +2269,7 @@ class MultiSyndic(MinionBase):
                     self.event_forward_timeout < time.time()):
                     self._forward_events()
             # We don't handle ZMQErrors like the other minions
-            # I've put explicit handling around the recieve calls
+            # I've put explicit handling around the receive calls
             # in the process_*_socket methods. If we see any other
             # errors they may need some kind of handling so log them
             # for now.
@@ -2425,6 +2448,20 @@ class Matcher(object):
                       'statement from master')
             return False
         return salt.utils.subdict_match(self.opts['pillar'], tgt, delim=delim)
+
+    def pillar_exact_match(self, tgt, delim=':'):
+        '''
+        Reads in the pillar match, no globbing
+        '''
+        log.debug('pillar target: {0}'.format(tgt))
+        if delim not in tgt:
+            log.error('Got insufficient arguments for pillar match '
+                      'statement from master')
+            return False
+        return salt.utils.subdict_match(self.opts['pillar'],
+                                        tgt,
+                                        delim=delim,
+                                        exact_match=True)
 
     def ipcidr_match(self, tgt):
         '''

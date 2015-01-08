@@ -618,7 +618,7 @@ def wait_for_port(host, port=22, timeout=900, gateway=None):
         trycount += 1
         # test gateway usage
         if not usable_gateway:
-            pstatus = _exec_ssh_cmd(pcmd, **kwargs)
+            pstatus = _exec_ssh_cmd(pcmd, allow_failure=True, **kwargs)
             if pstatus == 0:
                 usable_gateway = True
             else:
@@ -631,7 +631,7 @@ def wait_for_port(host, port=22, timeout=900, gateway=None):
                     'SSH gateway is reachable but we can not login')
         # then try to reach out the target
         if usable_gateway:
-            status = _exec_ssh_cmd(cmd, **kwargs)
+            status = _exec_ssh_cmd(cmd, allow_failure=True, **kwargs)
             # Get the exit code of the SSH command.
             # If 0 then the port is open.
             if status == 0:
@@ -1531,6 +1531,9 @@ def sftp_file(dest_path, contents=None, kwargs=None, local_file=None):
     '''
     Use sftp to upload a file to a server
     '''
+    if kwargs is None:
+        kwargs = {}
+
     if contents is not None:
         tmpfh, tmppath = tempfile.mkstemp()
         with salt.utils.fopen(tmppath, 'w') as tmpfile:
@@ -1539,7 +1542,7 @@ def sftp_file(dest_path, contents=None, kwargs=None, local_file=None):
     if local_file is not None:
         tmppath = local_file
 
-    log.debug('Uploading {0} to {1} (sfcp)'.format(dest_path, kwargs['hostname']))
+    log.debug('Uploading {0} to {1} (sfcp)'.format(dest_path, kwargs.get('hostname')))
 
     ssh_args = [
         # Don't add new hosts to the host key database
@@ -2074,7 +2077,7 @@ def delete_minion_cachedir(minion_id, provider, opts, base=None):
     if base is None:
         base = os.path.join(syspaths.CACHE_DIR, 'cloud')
 
-    driver = opts['providers'][provider].keys()[0]
+    driver = opts['providers'][provider].iterkeys().next()
     fname = '{0}.p'.format(minion_id)
     for cachedir in ('requested', 'active'):
         path = os.path.join(base, cachedir, driver, provider, fname)
@@ -2126,7 +2129,7 @@ def update_bootstrap(config, url=None):
         else:
             script_name = os.path.basename(url)
     elif os.path.exists(url):
-        with open(url) as fic:
+        with salt.utils.fopen(url) as fic:
             script_content = fic.read()
         script_name = os.path.basename(url)
     # in last case, assuming we got a script content
@@ -2237,7 +2240,7 @@ def cache_node_list(nodes, provider, opts):
         return
 
     base = os.path.join(init_cachedir(), 'active')
-    driver = opts['providers'][provider].keys()[0]
+    driver = opts['providers'][provider].iterkeys().next()
     prov_dir = os.path.join(base, driver, provider)
     if not os.path.exists(prov_dir):
         os.makedirs(prov_dir)

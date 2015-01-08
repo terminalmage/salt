@@ -5,7 +5,7 @@ then invoking thin.
 
 This is not intended to be instantiated as a module, rather it is a
 helper script used by salt.client.ssh.Single.  It is here, in a
-seperate file, for convenience of development.
+separate file, for convenience of development.
 '''
 
 import hashlib
@@ -18,8 +18,7 @@ import stat
 THIN_ARCHIVE = 'salt-thin.tgz'
 EXT_ARCHIVE = 'salt-ext_mods.tgz'
 
-# FIXME - it would be ideal if these could be obtained directly from
-#         salt.exitcodes rather than duplicated.
+# Keep these in sync with salt/exitcodes.py
 EX_THIN_DEPLOY = 11
 EX_THIN_CHECKSUM = 12
 EX_MOD_DEPLOY = 13
@@ -178,7 +177,14 @@ def main(argv):
     sys.stdout.flush()
     sys.stderr.write(OPTIONS.delimiter + '\n')
     sys.stderr.flush()
-    if OPTIONS.wipe:
+    if OPTIONS.tty:
+        import subprocess
+        stdout, stderr = subprocess.Popen(salt_argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        sys.stdout.write(stdout)
+        sys.stdout.flush()
+        if OPTIONS.wipe:
+            shutil.rmtree(OPTIONS.saltdir)
+    elif OPTIONS.wipe:
         import subprocess
         subprocess.call(salt_argv)
         shutil.rmtree(OPTIONS.saltdir)

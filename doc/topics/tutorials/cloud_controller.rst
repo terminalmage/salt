@@ -53,20 +53,16 @@ to set up the libvirt pki keys.
 .. code-block:: yaml
 
     libvirt:
-      pkg:
-        - installed
-      file:
-        - managed
+      pkg.installed: []
+      file.managed:
         - name: /etc/sysconfig/libvirtd
         - contents: 'LIBVIRTD_ARGS="--listen"'
         - require:
           - pkg: libvirt
-      libvirt:
-        - keys
+      libvirt.keys:
         - require:
           - pkg: libvirt
-      service:
-        - running
+      service.running:
         - name: libvirtd
         - require:
           - pkg: libvirt
@@ -76,12 +72,10 @@ to set up the libvirt pki keys.
           - file: libvirt
 
     libvirt-python:
-      pkg:
-        - installed
+      pkg.installed: []
 
     libguestfs:
-      pkg:
-        - installed
+      pkg.installed:
         - pkgs:
           - libguestfs
           - libguestfs-tools
@@ -162,6 +156,8 @@ Virtual Machine generation applications are available for many platforms:
 
 vm-builder:
   https://wiki.debian.org/VMBuilder
+
+  .. seealso:: :formula_url:`vmbuilder-formula`
 
 Once virtual machine images are available, the easiest way to make them
 available to Salt Virt is to place them in the Salt file server. Just copy an

@@ -10,6 +10,7 @@ import os
 import plistlib
 
 # Import salt libs
+import salt.utils
 import salt.utils.decorators as decorators
 
 # Define the module's virtual name
@@ -55,7 +56,7 @@ def _available_services():
 
                 try:
                     # This assumes most of the plist files will be already in XML format
-                    with open(file_path):
+                    with salt.utils.fopen(file_path):
                         plist = plistlib.readPlist(true_path)
 
                 except Exception:
@@ -85,7 +86,7 @@ def _service_by_name(name):
         # Match on label
         return services[name]
 
-    for service in services.values():
+    for service in services.itervalues():
         if service['file_path'].lower() == name:
             # Match on full path
             return service

@@ -327,6 +327,14 @@
 # If set to 'changes', the output will be full unless the state didn't change.
 #state_output: full
 
+# Automatically aggregate all states that have support for mod_aggregate by
+# setting to True. Or pass a list of state module names to automatically
+# aggregate just those types.
+#
+# state_aggregate:
+#   - pkg
+#
+#state_aggregate: False
 
 #####      File Server settings      #####
 ##########################################
@@ -591,6 +599,7 @@
 
 # The level of messages to send to the log file.
 # One of 'garbage', 'trace', 'debug', info', 'warning', 'error', 'critical'.
+# If using 'log_granular_levels' this must be set to the highest desired level.
 #log_level_logfile: warning
 
 # The date and time format used in log messages. Allowed date/time formating
@@ -607,7 +616,7 @@
 # example sets the main salt library at the 'warning' level, but sets
 # 'salt.modules' to log at the 'debug' level:
 #   log_granular_levels:
-#     'salt': 'warning',
+#     'salt': 'warning'
 #     'salt.modules': 'debug'
 #
 #log_granular_levels: {}
