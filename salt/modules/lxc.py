@@ -201,7 +201,7 @@ def cloud_init_interface(name, vm_=None, **kwargs):
         vm_ = {}
     vm_ = copy.deepcopy(vm_)
     vm_ = salt.utils.dictupdate.update(vm_, kwargs)
-    profile = _lxc_profile(vm_.get('profile', {}))
+    profile = get_container_profile(vm_.get('profile', {}))
     if name is None:
         name = vm_['name']
     from_container = vm_.get('from_container', None)
