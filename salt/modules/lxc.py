@@ -1606,7 +1606,7 @@ def clone(name,
         cmd += ' -B {0}'.format(backing)
         if backing not in ('dir', 'overlayfs'):
             if size:
-                cmd += ' --fssize {0}'.format(size)
+                cmd += ' -L {0}'.format(size)
 
     ret = __salt__['cmd.run_all'](cmd)
     _clear_context()
