@@ -7,19 +7,19 @@ Module for managing Windows Updates using the Windows Update Agent.
 :depends:
         - salt.utils.win_update
 '''
-
 # Import Python libs
 from __future__ import absolute_import
 from __future__ import unicode_literals
 import logging
 
 # Import Salt libs
-from salt.ext import six
 import salt.utils
+import salt.utils.platform
 import salt.utils.win_update
 from salt.exceptions import CommandExecutionError
 
 # Import 3rd-party libs
+from salt.ext import six
 try:
     import pythoncom
     import win32com.client
@@ -34,7 +34,7 @@ def __virtual__():
     '''
     Only works on Windows systems with PyWin32
     '''
-    if not salt.utils.is_windows():
+    if not salt.utils.platform.is_windows():
         return False, 'WUA: Only available on Window systems'
 
     if not HAS_PYWIN32:

@@ -78,6 +78,10 @@ from __future__ import absolute_import
 
 import copy
 import logging
+
+# Import 3rd-party libs
+from salt.ext import six
+
 log = logging.getLogger(__name__)
 
 
@@ -400,7 +404,7 @@ def namespace_absent(name, **kwargs):
     if (
             res['code'] == 200 or
             (
-                isinstance(res['status'], str) and
+                isinstance(res['status'], six.string_types) and
                 'Terminating' in res['status']
             ) or
             (

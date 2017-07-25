@@ -41,17 +41,20 @@ except ImportError:
 
 # Import salt libs
 import salt.utils
+import salt.utils.args
+import salt.utils.decorators.path
 import salt.utils.files
-import salt.utils.pkg
-import salt.ext.six as six
 import salt.utils.itertools
-import salt.utils.systemd
-import salt.utils.decorators as decorators
+import salt.utils.pkg
 import salt.utils.pkg.rpm
+import salt.utils.systemd
 from salt.utils.versions import LooseVersion as _LooseVersion
 from salt.exceptions import (
     CommandExecutionError, MinionError, SaltInvocationError
 )
+
+# Import 3rd-party libs
+from salt.ext import six
 
 log = logging.getLogger(__name__)
 
@@ -262,7 +265,7 @@ def _get_extra_options(**kwargs):
     Returns list of extra options for yum
     '''
     ret = []
-    kwargs = salt.utils.clean_kwargs(**kwargs)
+    kwargs = salt.utils.args.clean_kwargs(**kwargs)
     for key, value in six.iteritems(kwargs):
         if isinstance(key, six.string_types):
             ret.append('--{0}=\'{1}\''.format(key, value))
@@ -2895,7 +2898,7 @@ def modified(*packages, **flags):
     return __salt__['lowpkg.modified'](*packages, **flags)
 
 
-@decorators.which('yumdownloader')
+@salt.utils.decorators.path.which('yumdownloader')
 def download(*packages):
     '''
     .. versionadded:: 2015.5.0

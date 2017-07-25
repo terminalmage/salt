@@ -46,18 +46,18 @@ To override individual configuration items, append --return_kwargs '{"key:": "va
 
 '''
 
-# Import python libs
+# Import Python libs
 from __future__ import absolute_import
 import json
 import logging
 
 # Import Salt libs
-import salt.ext.six as six
-import salt.utils
-import salt.utils.jid
 import salt.returners
+import salt.utils.jid
+import salt.utils.platform
 
-# Import third party libs
+# Import 3rd-party libs
+from salt.ext import six
 try:
     import redis
     HAS_REDIS = True
@@ -85,7 +85,7 @@ def _get_options(ret=None):
              'port': 'port',
              'db': 'db'}
 
-    if salt.utils.is_proxy():
+    if salt.utils.platform.is_proxy():
         return {
             'host': __opts__.get('redis.host', 'salt'),
             'port': __opts__.get('redis.port', 6379),
