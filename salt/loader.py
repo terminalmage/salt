@@ -1208,6 +1208,7 @@ class LazyLoader(salt.utils.lazy.LazyDict):
         self.file_mapping = salt.utils.odict.OrderedDict()
 
         opt_match = []
+
         def _replace_pre_ext(obj):
             '''
             Hack so we can get the optimization level that we replaced (if
