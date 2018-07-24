@@ -932,7 +932,8 @@ class LazyLoaderOptimizationOrderTest(TestCase):
     '''
     Test the optimization order priority in the loader (PY3)
     '''
-    module_name = 'lazyloadertest'
+    module_name = 'test'
+    subdir_module_name = 'subdirtest'
     module_content = textwrap.dedent('''\
         # -*- coding: utf-8 -*-
         from __future__ import absolute_import
@@ -951,6 +952,13 @@ class LazyLoaderOptimizationOrderTest(TestCase):
         self.module_dir = tempfile.mkdtemp(dir=TMP)
         self.module_file = os.path.join(self.module_dir,
                                         '{0}.py'.format(self.module_name))
+        self.subdir_module_dir = os.path.join(
+            self.module_dir,
+            self.subdir_module_name)
+        self.subdir_module_file = os.path.join(
+            self.subdir_module_dir,
+            '__init__.py')
+        os.mkdir(self.subdir_module_dir)
 
     def _get_loader(self, order=None):
         opts = copy.deepcopy(self.opts)
@@ -959,24 +967,32 @@ class LazyLoaderOptimizationOrderTest(TestCase):
         # Return a loader
         return LazyLoader([self.module_dir], opts, tag='module')
 
-    def _get_module_filename(self):
+    def _get_module_filename(self, module_name):
         # The act of referencing the loader entry forces the module to be
         # loaded by the LazyDict.
-        mod_fullname = self.loader[next(iter(self.loader))].__module__
+        mod_fullname = self.loader['{0}.test'.format(module_name)].__module__
         return sys.modules[mod_fullname].__file__
 
-    def _expected(self, optimize=0):
+    def _expected(self, module_name, optimize=0):
         if six.PY3:
-            return 'lazyloadertest.cpython-{0}{1}{2}.pyc'.format(
+            return '{0}.cpython-{1}{2}{3}.pyc'.format(
+                module_name,
                 sys.version_info[0],
                 sys.version_info[1],
                 '' if not optimize else '.opt-{0}'.format(optimize)
             )
         else:
-            return 'lazyloadertest.pyc'
+            ret = '{0}.pyc'.format(module_name)
+            # The __file__ attribute for the loaded module will be a .py
+            # instead of a .pyc on PY3.
+            return ret[:-1] if six.PY3 else ret
 
     def _write_module_file(self):
         with salt.utils.fopen(self.module_file, 'w') as fh:
+            fh.write(self.module_content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        with salt.utils.fopen(self.subdir_module_file, 'w') as fh:
             fh.write(self.module_content)
             fh.flush()
             os.fsync(fh.fileno())
@@ -990,44 +1006,68 @@ class LazyLoaderOptimizationOrderTest(TestCase):
             compileall.compile_file(self.module_file, quiet=1, optimize=0)
             compileall.compile_file(self.module_file, quiet=1, optimize=1)
             compileall.compile_file(self.module_file, quiet=1, optimize=2)
+            compileall.compile_file(self.subdir_module_file, quiet=1, optimize=0)
+            compileall.compile_file(self.subdir_module_file, quiet=1, optimize=1)
+            compileall.compile_file(self.subdir_module_file, quiet=1, optimize=2)
             # pylint: enable=unexpected-keyword-arg
         else:
             compileall.compile_file(self.module_file, quiet=1)
+            compileall.compile_file(self.subdir_module_file, quiet=1)
+
+    def _verify_loader(self, opt_level):
+        filenames = []
+        filenames.append(self._get_module_filename(self.module_name))
+        module_basename = os.path.basename(filenames[-1])
+        filenames.append(self._get_module_filename(self.subdir_module_name))
+        subdir_module_basename = os.path.basename(filenames[-1])
+
+        expected = self._expected(self.module_name, opt_level)
+        assert module_basename == expected, module_basename
+        assert self.loader['{0}.test'.format(self.module_name)]() is True
+
+        expected = self._expected('__init__', opt_level)
+        assert subdir_module_basename == expected, subdir_module_basename
+        assert self.loader['{0}.test'.format(self.subdir_module_name)]() is True
+
+        return filenames
+
+    def _remove(self, files):
+        for path in files:
+            try:
+                os.remove(path)
+            except OSError as exc:
+                if exc.errno != errno.ENOENT:
+                    log.error('Failed to remove %s: %s', path, exc)
 
     def _test_optimization_order(self, order):
         self._write_module_file()
         self._byte_compile()
 
-        # Clean up the original file so that we can be assured we're only
+        # Clean up the original files so that we can be assured we're only
         # loading the byte-compiled files(s).
         os.remove(self.module_file)
+        os.remove(self.subdir_module_file)
 
         self.loader = self._get_loader(order)
-        filename = self._get_module_filename()
-        basename = os.path.basename(filename)
-        assert basename == self._expected(order[0]), basename
+        loaded = self._verify_loader(order[0])
 
         if not USE_IMPORTLIB:
             # We are only testing multiple optimization levels on Python 3.5+
             return
 
-        # Remove the file and make a new loader. We should now load the
-        # byte-compiled file with an optimization level matching the 2nd
+        # Remove the files and make a new loader. We should now load the
+        # byte-compiled files with an optimization level matching the 2nd
         # element of the order list.
-        os.remove(filename)
+        self._remove(loaded)
         self.loader = self._get_loader(order)
-        filename = self._get_module_filename()
-        basename = os.path.basename(filename)
-        assert basename == self._expected(order[1]), basename
+        loaded = self._verify_loader(order[1])
 
-        # Remove the file and make a new loader. We should now load the
-        # byte-compiled file with an optimization level matching the 3rd
+        # Remove the files and make a new loader. We should now load the
+        # byte-compiled files with an optimization level matching the 3rd
         # element of the order list.
-        os.remove(filename)
+        self._remove(loaded)
         self.loader = self._get_loader(order)
-        filename = self._get_module_filename()
-        basename = os.path.basename(filename)
-        assert basename == self._expected(order[2]), basename
+        loaded = self._verify_loader(order[2])
 
     def test_optimization_order(self):
         '''
@@ -1050,7 +1090,7 @@ class LazyLoaderOptimizationOrderTest(TestCase):
         self._write_module_file()
         self._byte_compile()
         self.loader = self._get_loader()
-        filename = self._get_module_filename()
+        filename = self._get_module_filename(self.module_name)
         basename = os.path.basename(filename)
-        expected = 'lazyloadertest.py' if six.PY3 else 'lazyloadertest.pyc'
+        expected = 'test.py' if six.PY3 else 'test.pyc'
         assert basename == expected, basename
