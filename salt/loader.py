@@ -78,9 +78,6 @@ if USE_IMPORTLIB:
 else:
     SUFFIXES = imp.get_suffixes()
 
-PY3_PRE_EXT = \
-    re.compile(r'(\.cpython-{0}{1}(\.opt-[1-9])?)'.format(*sys.version_info[:2]))
-
 # Because on the cloud drivers we do `from salt.cloud.libcloudfuncs import *`
 # which simplifies code readability, it adds some unsupported functions into
 # the driver's module scope.
@@ -1102,11 +1099,40 @@ class LazyLoader(salt.utils.lazy.LazyDict):
         self.disabled = set(self.opts.get('disable_{0}{1}'.format(
             self.tag, '' if self.tag[-1] == 's' else 's'), []))
 
+        if not USE_IMPORTLIB:
+            # This attribute should only be referenced when loading using
+            # importlib, but define this anyway to ensure that there is no
+            # AttributeError.
+            self.bytecode_suffixes = ['.pyc'] if six.PY2 \
+                else ['.cpython-{0}{1}.pyc'.format(*sys.version_info[:2])]
+        else:
+            self.bytecode_suffixes = []
+            for suffix in importlib.machinery.BYTECODE_SUFFIXES:
+                for opt_level in self.opts['optimization_order']:
+                    self.bytecode_suffixes.append(
+                        '.cpython-{0}{1}{2}{3}'.format(
+                            sys.version_info[0],
+                            sys.version_info[1],
+                            '.opt-{0}'.format(opt_level) if opt_level else '',
+                            suffix
+                        )
+                    )
+
         # A map of suffix to description for imp
         self.suffix_map = {}
+        # Allow for zipimport of modules
+        if self.opts.get('enable_zip_modules', True) is True:
+            self.suffix_map['.zip'] = tuple()
+        # allow for module dirs
+        if USE_IMPORTLIB:
+            self.suffix_map[''] = ('', '', MODULE_KIND_PKG_DIRECTORY)
+        else:
+            self.suffix_map[''] = ('', '', imp.PKG_DIRECTORY)
+
         # A list to determine precedence of extensions
         # Prefer packages (directories) over modules (single files)!
         self.suffix_order = ['']
+
         for (suffix, mode, kind) in SUFFIXES:
             self.suffix_map[suffix] = (suffix, mode, kind)
             self.suffix_order.append(suffix)
@@ -1194,30 +1220,10 @@ class LazyLoader(salt.utils.lazy.LazyDict):
             except ImportError:
                 log.info('Cython is enabled in the options but not present '
                     'in the system path. Skipping Cython modules.')
-        # Allow for zipimport of modules
-        if self.opts.get('enable_zip_modules', True) is True:
-            self.suffix_map['.zip'] = tuple()
-        # allow for module dirs
-        if USE_IMPORTLIB:
-            self.suffix_map[''] = ('', '', MODULE_KIND_PKG_DIRECTORY)
-        else:
-            self.suffix_map[''] = ('', '', imp.PKG_DIRECTORY)
 
         # create mapping of filename (without suffix) to (path, suffix)
         # The files are added in order of priority, so order *must* be retained.
         self.file_mapping = salt.utils.odict.OrderedDict()
-
-        opt_match = []
-
-        def _replace_pre_ext(obj):
-            '''
-            Hack so we can get the optimization level that we replaced (if
-            any) out of the re.sub call below. We use a list here because
-            it is a persistent data structure that we will be able to
-            access after re.sub is called.
-            '''
-            opt_match.append(obj)
-            return ''
 
         def _find_dunder_init(fpath):
             '''
@@ -1228,7 +1234,7 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                 if '' == suffix:
                     continue  # Next suffix (__init__ must have a suffix)
                 elif six.PY3 and suffix == '.pyc':
-                    for idx, opt_level in enumerate(self.opts['optimization_order']):
+                    for opt_level in self.opts['optimization_order']:
                         if USE_IMPORTLIB:
                             cached = importlib.util.cache_from_source(
                                 os.path.join(fpath, '__init__.py'),
@@ -1246,12 +1252,12 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                                 )
                             )
                         if os.path.isfile(cached):
-                            return cached, suffix, fpath, idx
+                            return (cached, opt_level)
                 else:
                     init_file = '__init__{0}'.format(suffix)
                     if init_file in subfiles:
-                        return os.path.join(fpath, init_file), suffix, fpath, 0
-            return None
+                        return True
+            return False
 
         for mod_dir in self.module_dirs:
             try:
@@ -1267,6 +1273,7 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                     pycache_files = [
                         os.path.join('__pycache__', x) for x in
                         sorted(os.listdir(os.path.join(mod_dir, '__pycache__')))
+                        if not x.startswith('__init__.')
                     ]
                 except OSError:
                     pass
@@ -1283,37 +1290,24 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                         continue  # Next filename
                     f_noext, ext = os.path.splitext(basename)
 
-                    pre_ext = ''
-                    opt_index = 0
-                    if six.PY3:
-                        # Optimization level not reflected in filename on PY2
-                        f_noext = PY3_PRE_EXT.sub(_replace_pre_ext, f_noext)
-                        try:
-                            pre_ext, opt_level = opt_match.pop().groups()
-                        except (AttributeError, IndexError):
-                            # No regex match
-                            opt_level = 0
+                    opt_index = None
+                    if six.PY3 and ext == '.pyc':
+                        for index, suffix in enumerate(self.bytecode_suffixes):
+                            if basename.endswith(suffix):
+                                f_noext = basename[:-len(suffix)]
+                                opt_index = index
+                                break
                         else:
-                            try:
-                                opt_level = int(opt_level.rsplit('-', 1)[-1])
-                            except (AttributeError, IndexError, ValueError):
-                                # No regex match or no optimization level matched
-                                opt_level = 0
-                        try:
-                            opt_index = self.opts['optimization_order'].index(opt_level)
-                        except KeyError:
-                            log.trace(
-                                'Disallowed optimization level %d for module '
-                                'name \'%s\', skipping. Add %d to the '
-                                '\'optimization_order\' config option if you '
-                                'do not want to ignore this optimization '
-                                'level.', opt_level, f_noext, opt_level
-                            )
                             continue
+                    else:
+                        opt_index = 0
 
                     # make sure it is a suffix we support
                     if ext not in self.suffix_map:
                         continue  # Next filename
+                    elif USE_IMPORTLIB and opt_index is None:
+                        continue  # Not a supported bytecode suffix
+
                     if f_noext in self.disabled:
                         log.trace(
                             'Skipping {0}, it is disabled by configuration'.format(
@@ -1325,11 +1319,18 @@ class LazyLoader(salt.utils.lazy.LazyDict):
 
                     # if path is a directory, look for a dunder init
                     if ext == '':
+                        init_path = _find_dunder_init(fpath)
+                        if not init_path:
+                            continue
+                        dirname = True  # Allow this module to be loaded on PY3
                         try:
-                            fpath, ext, dirname, opt_index = _find_dunder_init(fpath)
+                            fpath, opt_level = init_path
                         except TypeError:
-                            # No __init__ file found
                             pass
+                        else:
+                            # On Python 3, load dunder inits from subdirs by
+                            # their full file path.
+                            ext = os.path.splitext(fpath)[1]
 
                     try:
                         curr_ext = self.file_mapping[f_noext][1]
@@ -1476,7 +1477,6 @@ class LazyLoader(salt.utils.lazy.LazyDict):
                         # Package directory, look for __init__
                         loader_details = [
                             (importlib.machinery.SourceFileLoader, importlib.machinery.SOURCE_SUFFIXES),
-                            (importlib.machinery.SourcelessFileLoader, importlib.machinery.BYTECODE_SUFFIXES),
                             (importlib.machinery.ExtensionFileLoader, importlib.machinery.EXTENSION_SUFFIXES),
                         ]
                         file_finder = importlib.machinery.FileFinder(

@@ -934,11 +934,28 @@ class LazyLoaderOptimizationOrderTest(TestCase):
     '''
     module_name = 'test'
     subdir_module_name = 'subdirtest'
+
     module_content = textwrap.dedent('''\
         # -*- coding: utf-8 -*-
         from __future__ import absolute_import
 
         def test():
+            return True
+        ''')
+    subdir_module_content = textwrap.dedent('''\
+        # -*- coding: utf-8 -*-
+        from __future__ import absolute_import
+        from .foo import importedfunc
+
+        def test():
+            return True
+        ''')
+    subdir_submodule_content = textwrap.dedent('''\
+        # -*- coding: utf-8 -*-
+        from __future__ import absolute_import
+        #__all__ = ['importedfunc']
+
+        def importedfunc():
             return True
         ''')
 
@@ -958,6 +975,9 @@ class LazyLoaderOptimizationOrderTest(TestCase):
         self.subdir_module_file = os.path.join(
             self.subdir_module_dir,
             '__init__.py')
+        self.subdir_submodule_file = os.path.join(
+            self.subdir_module_dir,
+            'foo.py')
         os.mkdir(self.subdir_module_dir)
 
     def _get_loader(self, order=None):
@@ -987,21 +1007,25 @@ class LazyLoaderOptimizationOrderTest(TestCase):
             # instead of a .pyc on PY3.
             return ret[:-1] if six.PY3 else ret
 
-    def _write_module_file(self):
+    def _write(self):
         with salt.utils.fopen(self.module_file, 'w') as fh:
             fh.write(self.module_content)
             fh.flush()
             os.fsync(fh.fileno())
         with salt.utils.fopen(self.subdir_module_file, 'w') as fh:
-            fh.write(self.module_content)
+            fh.write(self.subdir_module_content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        with salt.utils.fopen(self.subdir_submodule_file, 'w') as fh:
+            fh.write(self.subdir_submodule_content)
             fh.flush()
             os.fsync(fh.fileno())
 
     def _byte_compile(self):
         if USE_IMPORTLIB:
-            # Skip this check as "optimize" is unique to PY3's compileall
-            # module, and this will be a false error when Pylint is run on
-            # Python 2.
+            # Skip this pylint check as "optimize" is unique to PY3's
+            # compileall module, and this will be a false error when Pylint is
+            # run on Python 2.
             # pylint: disable=unexpected-keyword-arg
             compileall.compile_file(self.module_file, quiet=1, optimize=0)
             compileall.compile_file(self.module_file, quiet=1, optimize=1)
@@ -1009,25 +1033,32 @@ class LazyLoaderOptimizationOrderTest(TestCase):
             compileall.compile_file(self.subdir_module_file, quiet=1, optimize=0)
             compileall.compile_file(self.subdir_module_file, quiet=1, optimize=1)
             compileall.compile_file(self.subdir_module_file, quiet=1, optimize=2)
+            compileall.compile_file(self.subdir_submodule_file, quiet=1, optimize=0)
+            compileall.compile_file(self.subdir_submodule_file, quiet=1, optimize=1)
+            compileall.compile_file(self.subdir_submodule_file, quiet=1, optimize=2)
             # pylint: enable=unexpected-keyword-arg
         else:
             compileall.compile_file(self.module_file, quiet=1)
             compileall.compile_file(self.subdir_module_file, quiet=1)
+            compileall.compile_file(self.subdir_submodule_file, quiet=1)
 
     def _verify_loader(self, opt_level):
         filenames = []
-        filenames.append(self._get_module_filename(self.module_name))
-        module_basename = os.path.basename(filenames[-1])
-        filenames.append(self._get_module_filename(self.subdir_module_name))
-        subdir_module_basename = os.path.basename(filenames[-1])
 
-        expected = self._expected(self.module_name, opt_level)
-        assert module_basename == expected, module_basename
         assert self.loader['{0}.test'.format(self.module_name)]() is True
 
+        filenames.append(self._get_module_filename(self.module_name))
+        module_basename = os.path.basename(filenames[-1])
+        expected = self._expected(self.module_name, opt_level)
+        assert module_basename == expected, module_basename
+
+        assert self.loader['{0}.test'.format(self.subdir_module_name)]() is True
+        assert self.loader['{0}.importedfunc'.format(self.subdir_module_name)]() is True
+
+        filenames.append(self._get_module_filename(self.subdir_module_name))
+        subdir_module_basename = os.path.basename(filenames[-1])
         expected = self._expected('__init__', opt_level)
         assert subdir_module_basename == expected, subdir_module_basename
-        assert self.loader['{0}.test'.format(self.subdir_module_name)]() is True
 
         return filenames
 
@@ -1040,13 +1071,14 @@ class LazyLoaderOptimizationOrderTest(TestCase):
                     log.error('Failed to remove %s: %s', path, exc)
 
     def _test_optimization_order(self, order):
-        self._write_module_file()
+        self._write()
         self._byte_compile()
 
         # Clean up the original files so that we can be assured we're only
         # loading the byte-compiled files(s).
         os.remove(self.module_file)
         os.remove(self.subdir_module_file)
+        os.remove(self.subdir_submodule_file)
 
         self.loader = self._get_loader(order)
         loaded = self._verify_loader(order[0])
@@ -1076,8 +1108,7 @@ class LazyLoaderOptimizationOrderTest(TestCase):
         self._test_optimization_order([0, 1, 2])
         self._test_optimization_order([0, 2, 1])
         if USE_IMPORTLIB:
-            # optimization_order only supported on Python 3.5+, earlier
-            # releases only support unoptimized .pyc files.
+            # optimization_order only supported on Python 3.5+
             self._test_optimization_order([1, 2, 0])
             self._test_optimization_order([1, 0, 2])
             self._test_optimization_order([2, 0, 1])
@@ -1085,12 +1116,30 @@ class LazyLoaderOptimizationOrderTest(TestCase):
 
     def test_load_source_file(self):
         '''
-        Make sure that .py files are preferred over .pyc files
+        Make sure that .py files are preferred over .pyc files. Note that even
+        when loaded from a source file, PY2 will still show its .pyc
+        counterpart in its __file__ attribute. We may need a better way of
+        testing this on PY2, but this test is more for PY3 than PY2. The suffix
+        order is fixed in imp.get_suffixes(), whereas we build it manually to
+        match PY2 when using importlib on PY3 (which is what we are testing here).
         '''
-        self._write_module_file()
+        self._write()
         self._byte_compile()
         self.loader = self._get_loader()
+
+        # First check a module loaded from a .py file in the module dir
         filename = self._get_module_filename(self.module_name)
         basename = os.path.basename(filename)
-        expected = 'test.py' if six.PY3 else 'test.pyc'
+        expected = '{0}.py'.format(self.module_name) if six.PY3 \
+            else '{0}.pyc'.format(self.module_name)
         assert basename == expected, basename
+
+        # Now check a module loaded from a __init__.py in a subdir
+        filename = self._get_module_filename(self.subdir_module_name)
+        basename = os.path.basename(filename)
+        expected = '__init__.py' if six.PY3 else '__init__.pyc'
+        assert basename == expected, basename
+
+        assert self.loader['{0}.test'.format(self.module_name)]() is True
+        assert self.loader['{0}.test'.format(self.subdir_module_name)]() is True
+        assert self.loader['{0}.importedfunc'.format(self.subdir_module_name)]() is True
