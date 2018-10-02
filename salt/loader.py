@@ -1607,7 +1607,10 @@ class LazyLoader(salt.utils.lazy.LazyDict):
         for p_name, p_value in six.iteritems(self.pack):
             setattr(mod, p_name, p_value)
 
-        module_name = mod.__name__.rsplit('.', 1)[-1]
+        try:
+            module_name = mod.__virtualname__
+        except AttributeError:
+            module_name = mod.__name__.rsplit('.', 1)[-1]
 
         # Call a module's initialization method if it exists
         module_init = getattr(mod, '__init__', None)
