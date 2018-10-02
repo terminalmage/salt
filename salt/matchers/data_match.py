@@ -15,10 +15,12 @@ import salt.loader  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'data'
+
 
 def match(tgt, functions=None):
     '''
-    Match based on the local data store on the minion
+    Matches based on the local data store on the minion
     '''
     if functions is None:
         utils = salt.loader.utils(__opts__)

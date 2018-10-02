@@ -9,10 +9,12 @@ import salt.utils.data  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'pillar_exact'
+
 
 def match(tgt, delimiter=':'):
     '''
-    Reads in the pillar match, no globbing, no PCRE
+    Matches the value of a Pillar key exactly (no globbing or PCRE)
     '''
     log.debug('pillar target: %s', tgt)
     if delimiter not in tgt:

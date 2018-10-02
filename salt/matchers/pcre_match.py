@@ -6,9 +6,11 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import re
 
+__virtualname__ = 'pcre'
+
 
 def match(tgt):
     '''
-    Returns true if the passed pcre regex matches
+    Matches the minion ID using a Perl-compatible regular expression (PCRE)
     '''
     return bool(re.match(tgt, __opts__['id']))

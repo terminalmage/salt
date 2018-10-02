@@ -16,10 +16,13 @@ else:
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'ipcidr'
+__virtual_aliases__ = ('subnet',)
+
 
 def match(tgt):
     '''
-    Matches based on IP address or CIDR notation
+    Matches based on IP address or CIDR notation (i.e. subnet membership)
     '''
     try:
         # Target is an address?

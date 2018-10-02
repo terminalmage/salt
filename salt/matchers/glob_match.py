@@ -7,10 +7,12 @@ from __future__ import absolute_import, print_function, unicode_literals
 import fnmatch
 from salt.ext import six  # pylint: disable=3rd-party-module-not-gated
 
+__virtualname__ = 'glob'
+
 
 def match(tgt):
     '''
-    Returns true if the passed glob matches the id
+    Matches a Minion ID using globbing
     '''
     if not isinstance(tgt, six.string_types):
         return False

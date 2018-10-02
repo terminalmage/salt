@@ -11,10 +11,12 @@ import salt.utils.data  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'grain_pcre'
+
 
 def match(tgt, delimiter=DEFAULT_TARGET_DELIM):
     '''
-    Matches a grain based on regex
+    Matches the value of a Grains key using a PCRE
     '''
     log.debug('grains pcre target: %s', tgt)
     if delimiter not in tgt:

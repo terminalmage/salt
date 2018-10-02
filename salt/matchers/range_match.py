@@ -15,6 +15,8 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'range'
+
 
 def match(tgt):
     '''

@@ -13,6 +13,8 @@ import salt.utils.minions  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'compound_pillar_exact'
+
 
 def mmatch(expr, delimiter, greedy):
     '''

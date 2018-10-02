@@ -11,10 +11,12 @@ import salt.utils.data  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'grain'
+
 
 def match(tgt, delimiter=DEFAULT_TARGET_DELIM):
     '''
-    Reads in the grains glob match
+    Matches the value of a Grains key using globbing
     '''
     log.debug('grains target: %s', tgt)
     if delimiter not in tgt:

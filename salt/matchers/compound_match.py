@@ -18,10 +18,12 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'compound'
+
 
 def match(tgt):
     '''
-    Runs the compound target check
+    Performs a compound match (see documentation for syntax)
     '''
     nodegroups = __opts__.get('nodegroups', {})
     matchers = salt.loader.matchers(__opts__)

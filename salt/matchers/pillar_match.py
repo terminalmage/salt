@@ -10,10 +10,12 @@ import salt.utils.data  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'pillar'
+
 
 def match(tgt, delimiter=DEFAULT_TARGET_DELIM):
     '''
-    Reads in the pillar glob match
+    Matches the value of a Pillar key using globbing
     '''
     log.debug('pillar target: %s', tgt)
     if delimiter not in tgt:

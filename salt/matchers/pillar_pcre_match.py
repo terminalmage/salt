@@ -10,10 +10,12 @@ import salt.utils.data  # pylint: disable=3rd-party-module-not-gated
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'pillar_pcre'
+
 
 def match(tgt, delimiter=DEFAULT_TARGET_DELIM):
     '''
-    Reads in the pillar pcre match
+    Matches the value of a Pillar key using a PCRE
     '''
     log.debug('pillar PCRE target: %s', tgt)
     if delimiter not in tgt:

@@ -7,10 +7,12 @@ import logging
 
 log = logging.getLogger(__name__)
 
+__virtualname__ = 'list'
+
 
 def match(tgt):
     '''
-    Determines if this host is on the list
+    Matches the Minion ID from a comma-separated list of IDs
     '''
     try:
         if ',' + __opts__['id'] + ',' in tgt \
