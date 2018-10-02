@@ -1096,6 +1096,38 @@ class TargetOptionsMixIn(six.with_metaclass(MixInMeta, object)):
             help='List all known hosts to currently visible or other specified rosters'
         )
         group.add_option(
+            '-M', '--matchers',
+            default=False,
+            action='store_true',
+            dest='list_matchers',
+            help='List all matchers available'
+        )
+        group.add_option(
+            '--match',
+            default=None,
+            help=('Choose which matcher to use (default: glob). Use '
+                  '-M/--matchers to list available matchers.')
+        )
+
+        group = self.additional_target_options_group = optparse.OptionGroup(
+            self,
+            'Additional Target Options',
+            'Additional options for minion targeting.'
+        )
+        self.add_option_group(group)
+        group.add_option(
+            '--delimiter',
+            default=DEFAULT_TARGET_DELIM,
+            help=('Change the default delimiter for matching in multi-level '
+                  'data structures. Default: \'%default\'.')
+        )
+
+        group = self.legacy_target_options_group = optparse.OptionGroup(
+            self, 'Legacy Target Options',
+            'Old target selection options (--match should be used instead).'
+        )
+        self.add_option_group(group)
+        group.add_option(
             '-E', '--pcre',
             default=False,
             action='store_true',
@@ -1145,23 +1177,42 @@ class TargetOptionsMixIn(six.with_metaclass(MixInMeta, object)):
                   'Range expressions look like %cluster.')
         )
 
-        group = self.additional_target_options_group = optparse.OptionGroup(
-            self,
-            'Additional Target Options',
-            'Additional options for minion targeting.'
-        )
-        self.add_option_group(group)
-        group.add_option(
-            '--delimiter',
-            default=DEFAULT_TARGET_DELIM,
-            help=('Change the default delimiter for matching in multi-level '
-                  'data structures. Default: \'%default\'.')
-        )
-
         self._create_process_functions()
 
+    def _list_matchers(self):
+        '''
+        List the available matchers and then exit
+        '''
+        import salt.loader
+        matchers = salt.loader.matchers(self.config)
+        # Get a sorted list of function references
+        match_funcs = {
+            x[:-6]: matchers[x].__doc__.strip() for x in
+            (y for y in matchers if y.endswith('.match'))
+        }
+        name_width = max(len(x) for x in six.iterkeys(match_funcs))
+        lines = []
+
+        def _add_line(name, desc):
+            lines.append(
+                '{name:{name_width}}   {desc}\n'.format(
+                    name=name,
+                    name_width=name_width,
+                    desc=desc,
+                )
+            )
+
+        _add_line('Name', 'Description')
+        lines.append('\n')
+        for name in sorted(match_funcs):
+            _add_line(name, match_funcs[name])
+
+        sys.stdout.write(''.join(lines))
+        sys.stdout.flush()
+        sys.exit(salt.defaults.exitcodes.EX_OK)
+
     def _create_process_functions(self):
-        for option in self.target_options_group.option_list:
+        for option in self.legacy_target_options_group.option_list:
             def process(opt):
                 if getattr(self.options, opt.dest):
                     self.selected_target_option = opt.dest
@@ -1171,24 +1222,36 @@ class TargetOptionsMixIn(six.with_metaclass(MixInMeta, object)):
                 setattr(self, funcname, partial(process, option))
 
     def _mixin_after_parsed(self):
+        if self.options.list_matchers:
+            self._list_matchers()
+
         group_options_selected = [
-            option for option in self.target_options_group.option_list if
+            option for option in self.legacy_target_options_group.option_list if
             getattr(self.options, option.dest) is True
         ]
         if len(group_options_selected) > 1:
             self.error(
-                'The options {0} are mutually exclusive. Please only choose '
-                'one of them'.format('/'.join(
+                'The options {0} are mutually exclusive. Please choose only '
+                'one of them.'.format('/'.join(
                     [option.get_opt_string()
                      for option in group_options_selected]))
             )
+        elif len(group_options_selected) == 1 and self.options.match is not None:
+            self.error(
+                'The --match and {0} options are mutually exclusive. Please '
+                'choose only one of them.'.format(
+                    group_options_selected[0].get_opt_string()
+                )
+            )
+        elif not group_options_selected and self.options.match is not None:
+            self.selected_target_option = self.options.match
         self.config['selected_target_option'] = self.selected_target_option
 
 
 class ExtendedTargetOptionsMixIn(TargetOptionsMixIn):
     def _mixin_setup(self):
         TargetOptionsMixIn._mixin_setup(self)
-        group = self.target_options_group
+        group = self.legacy_target_options_group
         group.add_option(
             '-C', '--compound',
             default=False,
