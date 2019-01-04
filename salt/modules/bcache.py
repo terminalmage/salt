@@ -668,7 +668,7 @@ def _bdev(dev=None):
     if not dev:
         return False
     else:
-        return _devbase(os.path.realpath(os.path.join(dev, '../')))
+        return _devbase(os.path.dirname(dev))
 
 
 def _bcpath(dev):
