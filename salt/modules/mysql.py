@@ -1736,7 +1736,7 @@ def __grant_generate(grant,
     args = {}
     args['user'] = user
     args['host'] = host
-    if isinstance(ssl_option, list) and len(ssl_option):
+    if ssl_option and isinstance(ssl_option, list):
         qry += __ssl_option_sanitize(ssl_option)
     if salt.utils.data.is_true(grant_option):
         qry += ' WITH GRANT OPTION'
@@ -2100,7 +2100,7 @@ def get_master_status(**connection_args):
     conn.close()
 
     # check for if this minion is not a master
-    if len(rtnv) == 0:
+    if not rtnv:
         rtnv.append([])
 
     log.debug('%s-->%s', mod, len(rtnv[0]))
@@ -2170,7 +2170,7 @@ def get_slave_status(**connection_args):
     conn.close()
 
     # check for if this minion is not a slave
-    if len(rtnv) == 0:
+    if not rtnv:
         rtnv.append([])
 
     log.debug('%s-->%s', mod, len(rtnv[0]))
@@ -2198,7 +2198,7 @@ def showvariables(**connection_args):
         return []
     rtnv = __do_query_into_hash(conn, "SHOW VARIABLES")
     conn.close()
-    if len(rtnv) == 0:
+    if not rtnv:
         rtnv.append([])
 
     log.debug('%s-->%s', mod, len(rtnv[0]))
@@ -2226,7 +2226,7 @@ def showglobal(**connection_args):
         return []
     rtnv = __do_query_into_hash(conn, "SHOW GLOBAL VARIABLES")
     conn.close()
-    if len(rtnv) == 0:
+    if not rtnv:
         rtnv.append([])
 
     log.debug('%s-->%s', mod, len(rtnv[0]))

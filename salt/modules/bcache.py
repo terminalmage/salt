@@ -105,10 +105,7 @@ def attach_(dev=None):
             if 'cache' in data:
                 res[dev] = attach_(dev)
 
-        if len(res):
-            return res
-        else:
-            return None
+        return res if res else None
 
     bcache = uuid(dev)
     if bcache:
@@ -150,10 +147,7 @@ def detach(dev=None):
             if 'cache' in data:
                 res[dev] = detach(dev)
 
-        if len(res):
-            return res
-        else:
-            return None
+        return res if res else None
 
     log.debug('Detaching %s', dev)
     if not _bcsys(dev, 'detach', 'goaway', 'error', 'Error detaching {0}'.format(dev)):
@@ -536,7 +530,7 @@ def device(dev, stats=False, config=False, internals=False, superblock=False):
     if internals:
         interres = result.pop('inter_ro', {})
         interres.update(result.pop('inter_rw', {}))
-        if len(interres):
+        if interres:
             for key in interres:
                 if key.startswith('internal'):
                     nkey = re.sub(r'internal[s/]*', '', key)
@@ -826,7 +820,7 @@ def _sysfs_parse(path, base_attr=None, stats=False, config=False, internals=Fals
         for intf in intflist:
             if intf in result:
                 ifres[intf] = result.pop(intf)
-        if len(ifres):
+        if ifres:
             bresult[iftype] = ifres
 
     return bresult
