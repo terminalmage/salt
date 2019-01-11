@@ -851,7 +851,7 @@ def _parse_settings_bond_0(opts, iface, bond_def):
             if 1 <= len(opts['arp_ip_target']) <= 16:
                 bond.update({'arp_ip_target': ''})
                 for ip in opts['arp_ip_target']:  # pylint: disable=C0103
-                    if bond['arp_ip_target']):
+                    if bond['arp_ip_target']:
                         bond['arp_ip_target'] = bond['arp_ip_target'] + ',' + ip
                     else:
                         bond['arp_ip_target'] = ip

@@ -1159,7 +1159,7 @@ class LocalClient(object):
                 log.debug('jid %s found all minions %s', jid, found)
                 break
             elif len(found.intersection(minions)) >= len(minions) and self.opts['order_masters']:
-                if len(found) >= len(minions) and len(minions) > 0 and time.time() > gather_syndic_wait:
+                if minions and len(found) >= len(minions) and time.time() > gather_syndic_wait:
                     # There were some minions to find and we found them
                     # However, this does not imply that *all* masters have yet responded with expected minion lists.
                     # Therefore, continue to wait up to the syndic_wait period (calculated in gather_syndic_wait) to see

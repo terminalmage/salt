@@ -5527,8 +5527,8 @@ def list_datastores_via_proxy(datastore_names=None, backing_disk_ids=None,
                  backing_disk_scsi_addresses) else False
     # Get the ids of the disks with the scsi addresses
     if backing_disk_scsi_addresses:
-        log.debug('Retrieving disk ids for scsi addresses '
-                  '\'{0}\''.format(backing_disk_scsi_addresses))
+        log.debug('Retrieving disk ids for scsi addresses \'%s\'',
+                  backing_disk_scsi_addresses)
         disk_ids = [d.canonicalName for d in
                     salt.utils.vmware.get_disks(
                         target, scsi_addresses=backing_disk_scsi_addresses)]

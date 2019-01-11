@@ -5529,9 +5529,9 @@ def _checkAllAdmxPolicies(policy_class,
                                     policy_disabled_elements = policy_disabled_elements + 1
                                     log.debug('element %s is disabled', child_item.attrib['id'])
                     if element_only_enabled_disabled:
-                        if len(required_elements.keys()) > 0 \
-                                    and len(configured_elements.keys()) == len(required_elements.keys()):
-                            if policy_disabled_elements == len(required_elements.keys()):
+                        if required_elements \
+                                    and len(configured_elements) == len(required_elements):
+                            if policy_disabled_elements == len(required_elements):
                                 log.debug('%s is disabled by all enum elements', this_policyname)
                                 if this_policynamespace not in policy_vals:
                                     policy_vals[this_policynamespace] = {}

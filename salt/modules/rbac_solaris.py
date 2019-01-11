@@ -351,7 +351,7 @@ def role_add(user, role):
     )
 
     ## update user roles
-    if valid_role:
+    if valid_roles:
         res = __salt__['cmd.run_all']('usermod -R "{roles}" {login}'.format(
             login=user,
             roles=','.join(set(role_get(user) + valid_roles)),

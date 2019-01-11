@@ -386,10 +386,9 @@ class SSH(object):
                                                                       hostname=self.opts.get('tgt', ''),
                                                                       user=self.opts.get('ssh_user', ''),
                                                                       passwd=self.opts.get('ssh_passwd', '')))
-                log.info('The host {0} has been added to the roster {1}'.format(self.opts.get('tgt', ''),
-                                                                                roster_file))
+                log.info('The host %s has been added to the roster %s', self.opts.get('tgt', ''), roster_file)
         else:
-            log.error('Unable to update roster {0}: access denied'.format(roster_file))
+            log.error('Unable to update roster %s: access denied', roster_file)
 
     def _update_targets(self):
         '''

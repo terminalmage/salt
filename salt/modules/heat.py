@@ -608,7 +608,7 @@ def create_stack(name=None, template_file=None, environment=None,
     try:
         h_client.stacks.create(**fields)
     except Exception as ex:  # pylint: disable=W0703
-        log.exception('Create failed', ex)
+        log.exception('Create failed')
         ret['result'] = False
         ret['comment'] = six.text_type(ex)
         return ret

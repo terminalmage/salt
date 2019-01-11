@@ -292,7 +292,6 @@ def grains(**kwargs):
 
         salt '*' nxos.cmd grains
     '''
-    import __main__ as main
     if not DEVICE_DETAILS['grains_cache']:
         ret = salt.utils.nxos.system_info(show_ver(**kwargs))
         log.debug(ret)

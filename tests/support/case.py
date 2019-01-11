@@ -82,7 +82,7 @@ class ShellTestCase(TestCase, AdaptedConfigurationTestCaseMixin):
 
         script_path = os.path.join(RUNTIME_VARS.TMP_SCRIPT_DIR, script_name)
         if not os.path.isfile(script_path):
-            log.debug('Generating {0}'.format(script_path))
+            log.debug('Generating %s', script_path)
 
             # Late import
             import salt.utils.files
