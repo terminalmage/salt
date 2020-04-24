@@ -6,6 +6,8 @@
 # Import Python Libs
 from __future__ import absolute_import
 
+import textwrap
+
 # Import Salt Libs
 import salt.modules.rpm_lowpkg as rpm
 
@@ -26,7 +28,7 @@ class RpmTestCase(TestCase, LoaderModuleMockMixin):
     """
 
     def setup_loader_modules(self):
-        return {rpm: {"rpm": MagicMock(return_value=MagicMock)}}
+        return {rpm: {"rpm": MagicMock(return_value=MagicMock), "__salt__": {}}}
 
     # 'list_pkgs' function tests: 2
 
@@ -266,3 +268,74 @@ class RpmTestCase(TestCase, LoaderModuleMockMixin):
             mock_log.warning.mock_calls[1][1][0],
             "Falling back on salt.utils.versions.version_cmp() for version comparisons",
         )
+
+    def test_info(self):
+        """
+        Confirm that a nonzero retcode does not raise an exception.
+        """
+        rpm_out = textwrap.dedent(
+            """\
+            name: bash
+            relocations: (not relocatable)
+            version: 4.4.19
+            vendor: CentOS
+            release: 10.el8
+            build_date_time_t: 1573230816
+            build_date: 1573230816
+            install_date_time_t: 1578952147
+            install_date: 1578952147
+            build_host: x86-01.mbox.centos.org
+            group: Unspecified
+            source_rpm: bash-4.4.19-10.el8.src.rpm
+            size: 6930068
+            arch: x86_64
+            license: GPLv3+
+            signature: RSA/SHA256, Wed Dec  4 22:45:04 2019, Key ID 05b555b38483c65d
+            packager: CentOS Buildsys <bugs@centos.org>
+            url: https://www.gnu.org/software/bash
+            summary: The GNU Bourne Again shell
+            edition: 4.4.19-10.el8
+            description:
+            The GNU Bourne Again shell (Bash) is a shell or command language
+            interpreter that is compatible with the Bourne shell (sh). Bash
+            incorporates useful features from the Korn shell (ksh) and the C shell
+            (csh). Most sh scripts can be run by bash without modification.
+            -----"""
+        )
+        dunder_salt = {
+            "cmd.run_stdout": MagicMock(return_value="LONGSIZE"),
+            "cmd.run_all": MagicMock(
+                return_value={
+                    "retcode": 123,
+                    "stdout": rpm_out,
+                    "stderr": "",
+                    "pid": 12345,
+                }
+            ),
+        }
+        expected = {
+            "bash": {
+                "relocations": "(not relocatable)",
+                "version": "4.4.19",
+                "vendor": "CentOS",
+                "release": "10.el8",
+                "build_date_time_t": 1573230816,
+                "build_date": "2019-11-08T16:33:36Z",
+                "install_date_time_t": 1578952147,
+                "install_date": "2020-01-13T21:49:07Z",
+                "build_host": "x86-01.mbox.centos.org",
+                "group": "Unspecified",
+                "source_rpm": "bash-4.4.19-10.el8.src.rpm",
+                "size": "6930068",
+                "arch": "x86_64",
+                "license": "GPLv3+",
+                "signature": "RSA/SHA256, Wed Dec  4 22:45:04 2019, Key ID 05b555b38483c65d",
+                "packager": "CentOS Buildsys <bugs@centos.org>",
+                "url": "https://www.gnu.org/software/bash",
+                "summary": "The GNU Bourne Again shell",
+                "description": "The GNU Bourne Again shell (Bash) is a shell or command language\ninterpreter that is compatible with the Bourne shell (sh). Bash\nincorporates useful features from the Korn shell (ksh) and the C shell\n(csh). Most sh scripts can be run by bash without modification.",
+            }
+        }
+        with patch.dict(rpm.__salt__, dunder_salt):
+            result = rpm.info("bash")
+            assert result == expected, result
