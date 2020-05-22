@@ -10,11 +10,12 @@ import textwrap
 
 # Import Salt Libs
 import salt.modules.rpm_lowpkg as rpm
+import salt.utils.platform
 
 # Import Salt Testing Libs
 from tests.support.mixins import LoaderModuleMockMixin
 from tests.support.mock import MagicMock, patch
-from tests.support.unit import TestCase
+from tests.support.unit import TestCase, skipIf
 
 
 def _called_with_root(mock):
@@ -22,6 +23,10 @@ def _called_with_root(mock):
     return cmd.startswith("rpm --root /")
 
 
+# Running these on windows is problematic due to differences in line breaks,
+# and since this code does not run on Windows there is no harm in skipping the
+# tests on that platform.
+@skipIf(salt.utils.platform.is_windows(), "N/A")
 class RpmTestCase(TestCase, LoaderModuleMockMixin):
     """
     Test cases for salt.modules.rpm
