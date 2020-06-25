@@ -20,7 +20,7 @@ import salt.utils.stringutils
 from salt.ext import six
 from salt.modules.virtualenv_mod import KNOWN_BINARY_NAMES
 from tests.support.case import ModuleCase
-from tests.support.helpers import slowTest, with_tempdir
+from tests.support.helpers import slowTest, with_tempdir, with_tempfile
 from tests.support.mixins import SaltReturnAssertsMixin
 from tests.support.runtests import RUNTIME_VARS
 from tests.support.sminion import create_sminion
@@ -2569,3 +2569,53 @@ class StateModuleTest(ModuleCase, SaltReturnAssertsMixin):
         assert isinstance(result, dict), result
         result = result[next(iter(result))]
         assert result["result"], result
+
+    @skipIf(sys.platform.startswith("win"), "umask is a no-op on Windows")
+    @with_tempfile(create=False)
+    def test_umask_007(self, name):
+        """
+        Should produce a file with mode 660
+        """
+        ret = self.run_function("state.single", fun="file.touch", name=name, umask=7,)
+        mode = oct(os.stat(name).st_mode)[-3:]
+        assert mode == "660", mode
+
+    @skipIf(sys.platform.startswith("win"), "umask is a no-op on Windows")
+    @with_tempfile(create=False)
+    def test_umask_022(self, name):
+        """
+        Should produce a file with mode 644
+        """
+        ret = self.run_function("state.single", fun="file.touch", name=name, umask=22,)
+        mode = oct(os.stat(name).st_mode)[-3:]
+        assert mode == "644", mode
+
+    @skipIf(sys.platform.startswith("win"), "umask is a no-op on Windows")
+    @with_tempfile(create=False)
+    def test_umask_027(self, name):
+        """
+        Should produce a file with mode 640
+        """
+        ret = self.run_function("state.single", fun="file.touch", name=name, umask=27,)
+        mode = oct(os.stat(name).st_mode)[-3:]
+        assert mode == "640", mode
+
+    @skipIf(sys.platform.startswith("win"), "umask is a no-op on Windows")
+    @with_tempfile(create=False)
+    def test_umask_999(self, name):
+        """
+        Should return a false result since this is an invalid umask
+        """
+        ret = self.run_function("state.single", fun="file.touch", name=name, umask=999,)
+        assert ret == ["Invalid umask: 999"]
+
+    @skipIf(sys.platform.startswith("win"), "umask is a no-op on Windows")
+    @with_tempfile(create=False)
+    def test_umask_foo(self, name):
+        """
+        Should return a false result since this is an invalid umask
+        """
+        ret = self.run_function(
+            "state.single", fun="file.touch", name=name, umask="foo",
+        )
+        assert ret == ["Invalid umask: foo"]
