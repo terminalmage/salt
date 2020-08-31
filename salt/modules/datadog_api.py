@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 An execution module that interacts with the Datadog API
 
@@ -20,7 +19,6 @@ https://docs.datadoghq.com/api/
 """
 
 # Import salt libs
-from __future__ import absolute_import, print_function, unicode_literals
 
 # Import third party libs
 import requests
