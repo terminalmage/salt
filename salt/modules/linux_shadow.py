@@ -19,8 +19,6 @@ import os
 import salt.utils.data
 import salt.utils.files
 from salt.exceptions import CommandExecutionError
-from salt.ext import six
-from salt.ext.six.moves import range
 
 try:
     import spwd

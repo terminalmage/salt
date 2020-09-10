@@ -10,7 +10,6 @@ import textwrap
 import salt.utils.platform
 
 # Import 3rd-party libs
-from salt.ext import six
 from tests.support.helpers import skip_if_not_root
 from tests.support.mixins import LoaderModuleMockMixin
 from tests.support.mock import DEFAULT, MagicMock, mock_open, patch
