@@ -231,19 +231,15 @@ To use it, one may pass it like this. Example:
 
 """
 
-# Import python libs
-
 import copy
 import logging
 import os
 
-# Import salt libs
 import salt.utils.args
 import salt.utils.functools
 import salt.utils.json
 import salt.utils.platform
 from salt.exceptions import CommandExecutionError, SaltRenderError
-from salt.ext import six
 
 log = logging.getLogger(__name__)
 
@@ -1144,7 +1140,7 @@ def call(
             'name': name
             'changes': {'retval': result},
             'result': True if result is None else bool(result),
-            'comment': result if isinstance(result, six.string_types) else ''
+            'comment': result if isinstance(result, str) else ''
         }
     """
     ret = {"name": name, "changes": {}, "result": False, "comment": ""}
