@@ -1656,7 +1656,7 @@ class YumTestCase(TestCase, LoaderModuleMockMixin):
         ), patch(
             "salt.utils.systemd.has_scope", MagicMock(return_value=False)
         ):
-            ret = yumpkg.update(name)
+            ret = yumpkg.update(name, setopt="obsoletes=0,plugins=0")
             expected = {name: {"old": old, "new": new}}
             assert ret == expected, ret
 
@@ -1665,6 +1665,8 @@ class YumTestCase(TestCase, LoaderModuleMockMixin):
                     "dnf",
                     "--quiet",
                     "-y",
+                    "--setopt",
+                    "plugins=0",
                     "--setopt",
                     "obsoletes=False",
                     "upgrade",
