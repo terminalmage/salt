@@ -144,15 +144,15 @@ def _yum():
     """
     contextkey = "yum_bin"
     if contextkey not in __context__:
-        if (
-            "fedora" in __grains__["os"].lower() and int(__grains__["osrelease"]) >= 22
-        ) or (
-            __grains__["os"].lower() in ("redhat", "centos")
-            and int(__grains__["osmajorrelease"]) >= 8
-        ):
+        if __salt__["config.get"]("pkg.use_dnf"):
             __context__[contextkey] = "dnf"
         else:
-            __context__[contextkey] = "yum"
+            os = __grains__["os"].lower()
+            rhel = __grains__["osmajorrelease"] if os in ("redhat", "centos") else 0
+            if "fedora" in os or rhel >= 8:
+                __context__[contextkey] = "dnf"
+            else:
+                __context__[contextkey] = "yum"
     return __context__[contextkey]
 
 
@@ -220,22 +220,12 @@ def _check_versionlock():
     Ensure that the appropriate versionlock plugin is present
     """
     if _yum() == "dnf":
-        if (
-            "fedora" in __grains__["os"].lower()
-            and int(__grains__.get("osrelease")) >= 26
-        ) or (
-            __grains__.get("os").lower() in ("redhat", "centos")
-            and int(__grains__.get("osmajorrelease")) >= 8
-        ):
-            vl_plugin = "python3-dnf-plugin-versionlock"
+        if __grains__["os"].lower() in ("redhat", "centos") and __grains__["osmajorrelease"] < 8:
+            vl_plugin = "python2-dnf-plugin-versionlock"
         else:
-            vl_plugin = "python3-dnf-plugins-extras-versionlock"
+            vl_plugin = "python3-dnf-plugin-versionlock"
     else:
-        vl_plugin = (
-            "yum-versionlock"
-            if __grains__.get("osmajorrelease") == "5"
-            else "yum-plugin-versionlock"
-        )
+        vl_plugin = "yum-plugin-versionlock"
 
     if vl_plugin not in list_pkgs():
         raise SaltInvocationError(
